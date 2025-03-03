@@ -1,8 +1,12 @@
 # Data directories
-data/raw/
-data/processed/
-outputs/
-models/
+data/raw/*
+data/processed/*
+outputs/*
+models/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!outputs/.gitkeep
+!models/.gitkeep
 
 # Python
 __pycache__/
