@@ -194,8 +194,14 @@ def process_raw_files(raw_dir, output_csv):
     print(f"Processed data saved to {output_csv}")
 
 if __name__ == "__main__":
-    # Adjust the paths if necessary
-    raw_dir = os.path.join("..", "data", "raw")
-    output_csv = os.path.join("..", "data", "processed", "cleaned_conversations.csv")
+    # Get the directory where the script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Get the project root directory (parent of script directory)
+    project_root = os.path.dirname(script_dir)
+    
+    # Define paths relative to project root
+    raw_dir = os.path.join(project_root, "data", "raw")
+    output_csv = os.path.join(project_root, "data", "processed", "cleaned_conversations.csv")
     
     process_raw_files(raw_dir, output_csv)
+    
