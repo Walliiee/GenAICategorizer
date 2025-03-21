@@ -1,0 +1,15 @@
+{
+  "VOICE_KEYWORDS": [
+    "transcript", 
+    "audio", 
+    "voice", 
+    "speech", 
+    "spoken", 
+    "recording", 
+    "sound"
+  ],
+  "DANISH_MARKERS": [
+    "hvordan", "hvad", "hvilken", "hvor", "hvem", "hvorfor", "skriv", "hjælp", "tak", 
+    "opslag", "sæson", "hold", "med", "og", "eller", "på", "jeg", "du", "vi", "denne"
+  ]
+} 

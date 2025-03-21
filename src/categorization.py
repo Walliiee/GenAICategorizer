@@ -2,130 +2,53 @@ import os
 import pandas as pd
 import numpy as np
 import json
+from datetime import datetime
 
-# Define main categories and their keywords/patterns
-CATEGORIES = {
-    'Learning/Education': {
-        'keywords': ['explain', 'teach', 'learn', 'understand', 'what is', 'how does', 'define', 'example', 'tutorial',
-                    'forklar', 'forklaring', 'forstå', 'lær', 'hvordan'],
-        'subcategories': {
-            'Concept Understanding': ['what is', 'define', 'concept', 'mean', 'forklar', 'hvad er'],
-            'How-to Learning': ['how to', 'steps', 'guide', 'tutorial', 'hvordan'],
-            'Problem Solving': ['solve', 'solution', 'answer', 'help me understand'],
-            'Academic Topics': ['method', 'theory', 'model', 'metode', 'teori', 'analyse']
-        }
-    },
-    'Code Development': {
-        'keywords': ['code', 'program', 'function', 'debug', 'error', 'python', 'javascript', 'api', 'database', 'git'],
-        'subcategories': {
-            'Bug Fixing': ['error', 'bug', 'fix', 'issue', 'debug'],
-            'Feature Development': ['create', 'implement', 'develop', 'add feature'],
-            'Code Review': ['review', 'improve', 'optimize', 'refactor']
-        }
-    },
-    'Writing Assistance': {
-        'keywords': ['write', 'draft', 'review', 'proofread', 'text', 'article', 'edit', 'grammar'],
-        'subcategories': {
-            'Content Creation': ['write', 'create', 'draft'],
-            'Editing': ['edit', 'proofread', 'review', 'improve'],
-            'Format/Style': ['format', 'style', 'structure']
-        }
-    },
-    'Analysis/Research': {
-        'keywords': ['analyze', 'research', 'study', 'investigate', 'compare', 'evaluate', 'data', 'findings'],
-        'subcategories': {
-            'Data Analysis': ['data', 'statistics', 'numbers', 'trends'],
-            'Research Review': ['research', 'paper', 'study', 'literature'],
-            'Comparative Analysis': ['compare', 'difference', 'versus', 'pros and cons']
-        }
-    },
-    'Creative & Ideation': {
-        'keywords': ['create', 'design', 'generate', 'brainstorm', 'imagine', 'creative', 'innovative', 'idea', 
-                    'suggest', 'think of', 'come up with', 'possibilities', 'concept'],
-        'subcategories': {
-            'Visual Design': ['design', 'visual', 'layout', 'look'],
-            'Idea Generation': ['brainstorm', 'ideas', 'possibilities', 'suggest'],
-            'Creative Problem Solving': ['solution', 'solve', 'address', 'improve'],
-            'Innovation': ['innovative', 'new', 'unique', 'original'],
-            'Concept Development': ['develop', 'refine', 'enhance', 'iterate']
-        }
-    },
-    'Professional/Business': {
-        'keywords': ['business', 'professional', 'company', 'client', 'strategy', 'market', 'industry'],
-        'subcategories': {
-            'Strategy': ['strategy', 'plan', 'approach'],
-            'Client/Customer': ['client', 'customer', 'service'],
-            'Business Analysis': ['analysis', 'market', 'industry']
-        }
-    },
-    'Technical Support': {
-        'keywords': ['help', 'fix', 'issue', 'problem', 'support', 'error', 'troubleshoot', 'sync', 'synch', 'calendar',
-                    'setup', 'connect', 'integration', 'configure', 'settings', 'apple', 'microsoft', 'teams', 'outlook'],
-        'subcategories': {
-            'Troubleshooting': ['troubleshoot', 'diagnose', 'fix', 'issue', 'error'],
-            'Setup/Installation': ['setup', 'install', 'configure', 'connect', 'sync'],
-            'Usage Help': ['how to use', 'help with', 'guide', 'how do i'],
-            'Integration Issues': ['sync', 'connect', 'integration', 'between', 'with']
-        }
-    },
-    'Personal Projects': {
-        'keywords': ['project', 'personal', 'help me with', 'my own', 'portfolio', 'hobby'],
-        'subcategories': {
-            'Project Planning': ['plan', 'structure', 'organize'],
-            'Implementation': ['build', 'create', 'develop'],
-            'Review/Feedback': ['review', 'feedback', 'improve']
-        }
-    },
-    'SoMe/Marketing': {
-        'keywords': ['social media', 'marketing', 'post', 'content', 'campaign', 'LinkedIn', 'Twitter', 'engagement',
-                    'opslag', 'sæson', 'hold', 'announce', 'announcement', 'season', 'team', 'group', 'start'],
-        'subcategories': {
-            'Content Creation': ['post', 'content', 'create', 'opslag', 'write post'],
-            'Event Announcements': ['season', 'sæson', 'event', 'start', 'announce', 'new'],
-            'Team/Group Updates': ['team', 'hold', 'group', 'members', 'community'],
-            'Campaign Planning': ['campaign', 'strategy', 'plan', 'theme', 'tema']
-        }
-    },
-    'DALL-E/Image': {
-        'keywords': ['image', 'picture', 'photo', 'generate image', 'create image', 'dall-e', 'dalle', 
-                    'draw', 'illustration', 'visual', 'artwork'],
-        'subcategories': {
-            'Image Generation': ['generate', 'create', 'make'],
-            'Image Editing': ['edit', 'modify', 'adjust'],
-            'Style Transfer': ['style', 'artistic', 'filter'],
-            'Visual Description': ['describe', 'detail', 'explain image']
-        }
-    },
-    'Cooking/Food': {
-        'keywords': ['food', 'cook', 'recipe', 'ingredient', 'meal', 'dish', 'kitchen', 'bake', 'pumpkin',
-                    'vegetable', 'fruit', 'squash', 'cuisine', 'eat', 'dinner', 'lunch', 'breakfast'],
-        'subcategories': {
-            'Recipe Help': ['recipe', 'how to make', 'cook', 'bake', 'prepare'],
-            'Ingredient Questions': ['ingredient', 'what is', 'substitute', 'alternative'],
-            'Food Identification': ['what is this', 'identify', 'which', 'type of', 'variety'],
-            'Meal Planning': ['meal', 'plan', 'menu', 'dinner', 'lunch', 'breakfast']
-        }
-    },
-    'Information/Curiosity': {
-        'keywords': ['what is', 'where is', 'why does', 'how does', 'tell me about', 'find information', 
-                    'information about', 'can you find', 'explain why', 'hvorfor', 'hvor', 'hvad', 
-                    'find ud af', 'finde information', 'information om'],
-        'subcategories': {
-            'General Knowledge': ['what is', 'tell me about', 'explain', 'fortæl'],
-            'Location/Place Questions': ['where is', 'location', 'place', 'hvor'],
-            'Cause/Effect': ['why does', 'how does', 'what causes', 'hvorfor'],
-            'Research Requests': ['find information', 'research', 'look up', 'find ud af', 'søg'],
-            'Industry/Topic Research': ['industry', 'sector', 'field', 'branche', 'område', 'digitalization', 'digitalisering']
+# Get the script directory and project root
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+
+# Load configuration from JSON files
+categories_path = os.path.join(project_root, "config", "categories.json")
+voice_keywords_path = os.path.join(project_root, "config", "voice_keywords.json")
+
+# Load categories from JSON file
+try:
+    with open(categories_path, 'r', encoding='utf-8') as f:
+        CATEGORIES = json.load(f)
+    print(f"Loaded categories from {categories_path}")
+except FileNotFoundError:
+    print(f"Warning: Categories file not found at {categories_path}. Using default categories.")
+    # Define main categories and their keywords/patterns as fallback
+    CATEGORIES = {
+        'Learning/Education': {
+            'keywords': ['explain', 'teach', 'learn', 'understand', 'what is'],
+            'subcategories': {
+                'Concept Understanding': ['what is', 'define', 'concept', 'mean'],
+                'How-to Learning': ['how to', 'steps', 'guide', 'tutorial']
+            }
+        },
+        'Technical Support': {
+            'keywords': ['help', 'fix', 'issue', 'problem', 'error'],
+            'subcategories': {
+                'Troubleshooting': ['troubleshoot', 'diagnose', 'fix', 'issue', 'error'],
+                'Setup/Installation': ['setup', 'install', 'configure', 'connect']
+            }
         }
     }
-}
 
-# Special cross-cutting category for voice
-VOICE_KEYWORDS = ['transcript', 'audio', 'voice', 'speech', 'spoken', 'recording', 'sound']
-
-# Danish language markers to help with categorization
-DANISH_MARKERS = ['hvordan', 'hvad', 'hvilken', 'hvor', 'hvem', 'hvorfor', 'skriv', 'hjælp', 'tak', 
-                 'opslag', 'sæson', 'hold', 'med', 'og', 'eller', 'på', 'jeg', 'du', 'vi', 'denne']
+# Load voice keywords from JSON file
+try:
+    with open(voice_keywords_path, 'r', encoding='utf-8') as f:
+        voice_config = json.load(f)
+        VOICE_KEYWORDS = voice_config["VOICE_KEYWORDS"]
+        DANISH_MARKERS = voice_config["DANISH_MARKERS"]
+    print(f"Loaded voice keywords from {voice_keywords_path}")
+except FileNotFoundError:
+    print(f"Warning: Voice keywords file not found at {voice_keywords_path}. Using defaults.")
+    # Define fallback voice keywords
+    VOICE_KEYWORDS = ['transcript', 'audio', 'voice', 'speech', 'spoken', 'recording']
+    DANISH_MARKERS = ['hvordan', 'hvad', 'hvilken', 'hvor', 'hvem', 'hvorfor']
 
 def is_danish_text(text):
     """Check if text is likely Danish"""

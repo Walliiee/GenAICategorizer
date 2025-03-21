@@ -3,24 +3,19 @@ import argparse
 import pandas as pd
 import json
 from datetime import datetime
+import shutil
 
 # Import modules
 import categorization
 import topic_modeling
 import visualization
 
-def ensure_directories():
+def ensure_directories(output_dir):
     """Ensure all required directories exist"""
-    # Get the directory where the script is located
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Get the project root directory (parent of script directory)
-    project_root = os.path.dirname(script_dir)
-    
     dirs = [
-        os.path.join(project_root, "data", "processed"),
-        os.path.join(project_root, "data", "embeddings"),
-        os.path.join(project_root, "data", "processed", "topic_modeling"),
-        os.path.join(project_root, "data", "processed", "topic_modeling", "visualizations")
+        os.path.join(output_dir, "models"),
+        os.path.join(output_dir, "figures"),
+        os.path.join(output_dir, "reports")
     ]
     
     for dir_path in dirs:
@@ -33,20 +28,30 @@ def run_complete_workflow(args):
     print("Starting GenAI Conversation Analysis Workflow")
     print("="*80)
     
+    # Create timestamped output directory if not specified
+    if args.output_dir is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        args.output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                     "outputs", f"run_{timestamp}")
+    
     # Ensure directories exist
-    ensure_directories()
+    ensure_directories(args.output_dir)
     
-    # Get absolute paths based on script location
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
-    
-    # Define file paths relative to project root
+    # Define file paths based on the output directory
     cleaned_csv = args.input_file
-    embedding_file = os.path.join(project_root, "data", "embeddings", "conversation_embeddings.npy")
-    keyword_output_csv = os.path.join(project_root, "data", "processed", "keyword_categorized_conversations.csv")
-    topic_output_dir = os.path.join(project_root, "data", "processed", "topic_modeling")
-    visualization_dir = os.path.join(topic_output_dir, "visualizations")
-    combined_output_csv = os.path.join(project_root, "data", "processed", "combined_results.csv")
+    models_dir = os.path.join(args.output_dir, "models")
+    figures_dir = os.path.join(args.output_dir, "figures")
+    reports_dir = os.path.join(args.output_dir, "reports")
+    
+    embedding_file = os.path.join(models_dir, "conversation_embeddings.npy")
+    keyword_output_csv = os.path.join(reports_dir, "keyword_categorized_conversations.csv")
+    topic_model_dir = os.path.join(models_dir, "topic_model")
+    topic_output_csv = os.path.join(reports_dir, "topic_modeled_conversations.csv")
+    combined_output_csv = os.path.join(reports_dir, "combined_results.csv")
+    metrics_file = os.path.join(reports_dir, "metrics.json")
+    
+    # Ensure the topic model directory exists
+    os.makedirs(topic_model_dir, exist_ok=True)
     
     # 1. Keyword-based categorization
     print("\n" + "-"*40)
@@ -60,21 +65,21 @@ def run_complete_workflow(args):
     print("-"*40)
     topic_df, topic_model = topic_modeling.run_topic_modeling(
         input_csv=cleaned_csv,
-        output_json=os.path.join(topic_output_dir, 'topic_data.json'),
-        output_csv=os.path.join(topic_output_dir, 'topic_modeled_conversations.csv'),
+        output_json=os.path.join(topic_model_dir, 'topic_data.json'),
+        output_csv=topic_output_csv,
         min_topic_size=args.min_topic_size,
         nr_topics=args.nr_topics
     )
     
     # Load topic data
-    with open(os.path.join(topic_output_dir, 'topic_data.json'), 'r', encoding='utf-8') as f:
+    with open(os.path.join(topic_model_dir, 'topic_data.json'), 'r', encoding='utf-8') as f:
         topic_data = json.load(f)
     
     # 3. Create visualizations
     print("\n" + "-"*40)
     print("Step 3: Creating visualizations")
     print("-"*40)
-    visualization.visualize_results(topic_df, topic_data, visualization_dir)
+    visualization.visualize_results(topic_df, topic_data, figures_dir)
     
     # 4. Combine results
     print("\n" + "-"*40)
@@ -126,7 +131,6 @@ def run_complete_workflow(args):
         }
     }
     
-    metrics_file = os.path.join(project_root, "data", "processed", "combined_metrics.json")
     with open(metrics_file, 'w', encoding='utf-8') as f:
         json.dump(combined_metrics, f, ensure_ascii=False, indent=4)
     
@@ -157,19 +161,18 @@ def run_complete_workflow(args):
     
     print("\nOutput files:")
     print(f"  - Keyword categorization: {keyword_output_csv}")
-    print(f"  - Topic modeling: {os.path.join(topic_output_dir, 'topic_modeled_conversations.csv')}")
-    print(f"  - Visualizations: {visualization_dir}")
+    print(f"  - Topic modeling: {topic_output_csv}")
+    print(f"  - Visualizations: {figures_dir}")
     print(f"  - Combined results: {combined_output_csv}")
     print(f"  - Metrics: {metrics_file}")
 
 def parse_arguments():
     """Parse command line arguments"""
-    # Get the directory where the script is located
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Get the project root directory (parent of script directory)
-    project_root = os.path.dirname(script_dir)
-    
     parser = argparse.ArgumentParser(description='GenAI Conversation Analysis')
+    
+    # Get the project root directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
     
     parser.add_argument('--input-file', type=str, 
                        default=os.path.join(project_root, "data", "processed", "cleaned_conversations.csv"),
@@ -180,6 +183,9 @@ def parse_arguments():
     
     parser.add_argument('--nr-topics', default="auto",
                        help='Number of topics to generate or "auto" for automatic detection')
+    
+    parser.add_argument('--output-dir', type=str, default=None,
+                       help='Directory to save analysis outputs (default: outputs/[timestamp])')
     
     return parser.parse_args()
 
