@@ -1,111 +1,178 @@
-# Conversation Categorizer
+# GenAI Categorizer
 
-A Python-based tool for analyzing and categorizing conversations from AI assistants (Claude, ChatGPT) to understand usage patterns and topics.
+[![CI](https://github.com/Walliiee/GenAICategorizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Walliiee/GenAICategorizer/actions/workflows/ci.yml)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+A Python tool that categorizes AI assistant conversations (Claude, ChatGPT) by topic using multilingual sentence embeddings and keyword-based classification. Analyze your conversation history to discover usage patterns across 12 topic categories with subcategory granularity.
 
 ## Features
 
-- Processes conversation data from multiple AI assistant formats (Claude, ChatGPT)
-- Supports multilingual analysis (optimized for English and Danish)
-- Generates language-agnostic embeddings using SentenceTransformer
-- Categorizes conversations into predefined topics with subcategories
-- Provides detailed metrics about conversation patterns
+- **Interactive web dashboard** — Drag-and-drop JSON or CSV files in your browser to instantly visualize conversation patterns with charts and a searchable data table
+- **Multi-format ingestion** — Parses conversation exports from both Claude and ChatGPT, handling nested JSON structures automatically
+- **Multilingual NLP** — Generates language-agnostic embeddings with `paraphrase-multilingual-mpnet-base-v2`, supporting English, Danish, and more
+- **12 topic categories** — Classifies conversations into categories like Code Development, Learning/Education, and Creative & Ideation, each with fine-grained subcategories
+- **GPU acceleration** — Automatic CUDA / Apple Silicon (MPS) detection with dynamic batch sizing and mixed-precision (FP16) inference
+- **Performance-first design** — Parallel file I/O, persistent caching, compiled regex patterns, and chunked memory management
+- **Built-in benchmarking** — Measure pipeline throughput and resource usage across all stages
+
+## How It Works
+
+```
+JSON Exports ──► Data Processing ──► Embedding Generation ──► Categorization ──► Results
+(Claude/ChatGPT)  │                   │                        │                  │
+                  ├─ Text extraction  ├─ SentenceTransformer   ├─ Regex scoring   ├─ CSV output
+                  ├─ Language detect  ├─ GPU/CPU auto-select   ├─ 12 categories   ├─ JSON metrics
+                  └─ Parallel I/O    └─ Embedding cache        └─ Subcategories   └─ Confidence
+```
+
+**Stage 1 — Data Processing** reads raw JSON conversation exports, extracts text from Claude (`chat_messages`) and ChatGPT (`mapping`) formats, detects language, and writes a cleaned CSV. Uses parallel I/O and language detection caching for speed.
+
+**Stage 2 — Embedding Generation** encodes conversation text into dense vector embeddings using a multilingual SentenceTransformer model. Supports GPU acceleration, dynamic batching, and persistent caching to avoid redundant computation.
+
+**Stage 3 — Categorization** scores each conversation against 12 topic categories using compiled regex keyword patterns. Assigns a primary category, subcategory, confidence score, and voice-conversation flag. Outputs a categorized CSV and JSON metrics summary.
 
 ## Categories
 
-The system categorizes conversations into various topics including:
-- Learning/Education
-- Code Development
-- Writing Assistance
-- Analysis/Research
-- Creative & Ideation
-- Professional/Business
-- Technical Support
-- Personal Projects
-- Social Media/Marketing
-- DALL-E/Image
-- Cooking/Food
-- Information/Curiosity
+| Category | Example Subcategories |
+|---|---|
+| Learning/Education | Concept Understanding, How-to Learning, Academic Topics |
+| Code Development | Bug Fixing, Feature Development, Code Review |
+| Writing Assistance | Content Creation, Editing, Format/Style |
+| Analysis/Research | Data Analysis, Research Review, Comparative Analysis |
+| Creative & Ideation | Idea Generation, Visual Design, Innovation |
+| Professional/Business | Strategy, Client/Customer, Business Analysis |
+| Technical Support | Troubleshooting, Setup/Installation, Integration Issues |
+| Personal Projects | Project Planning, Implementation, Review/Feedback |
+| SoMe/Marketing | Content Creation, Event Announcements, Campaign Planning |
+| DALL-E/Image | Image Generation, Image Editing, Style Transfer |
+| Cooking/Food | Recipe Help, Ingredient Questions, Meal Planning |
+| Information/Curiosity | General Knowledge, Cause/Effect, Research Requests |
 
-## Setup
+## Quick Start
 
 ### Prerequisites
 
-- Python 3.7+
-- pip or conda
+- Python 3.9+
+- pip
 
 ### Installation
 
-1. Clone the repository:
 ```bash
-git clone [your-repo-url]
-cd [repository-name]
+git clone https://github.com/Walliiee/GenAICategorizer.git
+cd GenAICategorizer
+pip install -e ".[web]"
 ```
 
-2. Install dependencies:
+For GPU acceleration (CUDA):
 
-Using pip:
 ```bash
-pip install -r requirements.txt
+pip install torch --index-url https://download.pytorch.org/whl/cu118
+pip install -e ".[web]"
 ```
 
-Using conda:
+### Web Dashboard (recommended)
+
+The fastest way to explore your conversation data:
+
 ```bash
-conda install pandas numpy scikit-learn pytorch -c pytorch -c conda-forge
-pip install langdetect sentence-transformers tqdm
+python -m src.app
 ```
 
-### Directory Structure
+Open **http://localhost:8000** in your browser, then drag-and-drop your JSON or CSV files onto the page. The dashboard shows:
 
-```
-.
-├── data/
-│   ├── raw/         # Place your JSON conversation files here
-│   └── processed/   # Output directory for processed data
-├── src/
-│   ├── data_processing.py
-│   ├── embedding.py
-│   └── clustering.py
-├── outputs/         # Analysis outputs
-└── models/         # Model files (if any)
-```
+- **Category distribution** — horizontal bar chart of all 12 topic categories
+- **Language breakdown** — doughnut chart of detected languages
+- **Complexity analysis** — simple / medium / complex split
+- **Voice vs text** — voice conversation detection
+- **Confidence scores** — histogram of categorization confidence
+- **Searchable data table** — filter by category, complexity, or free-text search; sortable columns; click to expand text previews
 
-## Usage
+### CLI Pipeline
 
-1. Add your JSON conversation files to the `data/raw` folder
+For batch processing or scripting, run the three-stage pipeline directly:
 
-2. Process the raw data:
+1. Place your conversation JSON exports in `data/raw/`.
+
+2. Run each stage:
+
 ```bash
 cd src
+
+# Stage 1 — Process raw JSON files into cleaned CSV
 python data_processing.py
-```
-This will create a CSV file in `data/processed`
 
-3. Generate embeddings:
-```bash
+# Stage 2 — Generate sentence embeddings
 python embedding.py
-```
-Note: This step may take some time depending on the amount of data
 
-4. Run the categorization:
-```bash
+# Stage 3 — Categorize conversations
 python clustering.py
 ```
 
-## Output
+3. Find your results in `data/processed/`:
 
-The system generates:
-- Cleaned conversation data (CSV)
-- Language-agnostic embeddings (NumPy array)
-- Category distribution metrics (JSON)
-- Detailed analysis of conversation patterns
+| File | Description |
+|---|---|
+| `cleaned_conversations.csv` | Extracted text with language labels |
+| `embeddings.npy` | Dense vector embeddings |
+| `categorized_conversations.csv` | Final categorized output |
+| `conversation_metrics.json` | Distribution and performance metrics |
 
-## Recommendations
+### Benchmarking
 
-- Install Rainbow CSV extension in your IDE for better CSV file viewing
-- Monitor the memory usage when processing large datasets
-- Regularly backup your raw data
+```bash
+cd src
+python benchmark.py
+```
 
-## Notes
+Measures execution time, memory delta, and throughput for each pipeline stage. Results are saved as timestamped JSON files in `outputs/benchmarks/`.
 
-- The `data/raw` and `data/processed` directories are git-ignored to prevent accidental commit of sensitive conversation data
-- Adjust the category keywords in `clustering.py` if you need to customize the categorization
+## Project Structure
+
+```
+GenAICategorizer/
+├── src/
+│   ├── __init__.py
+│   ├── app.py                   # FastAPI web dashboard (drag-and-drop UI)
+│   ├── data_processing.py       # JSON parsing, text extraction, language detection
+│   ├── embedding.py             # Sentence embedding generation with caching
+│   ├── clustering.py            # Keyword-based topic categorization
+│   ├── benchmark.py             # Pipeline performance measurement
+│   └── static/
+│       └── index.html           # Dashboard SPA (Chart.js, dark theme)
+├── tests/
+│   ├── test_data_processing.py
+│   ├── test_clustering.py
+│   └── test_embedding.py
+├── data/
+│   ├── raw/                     # Input: conversation JSON exports (git-ignored)
+│   └── processed/               # Output: CSVs, embeddings, metrics (git-ignored)
+├── .github/workflows/ci.yml     # GitHub Actions CI
+├── pyproject.toml                # Project metadata and dependencies
+├── LICENSE
+└── README.md
+```
+
+## Development
+
+### Setup
+
+```bash
+pip install -e ".[dev]"
+```
+
+### Running Tests
+
+```bash
+pytest
+```
+
+### Linting
+
+```bash
+ruff check src/ tests/
+```
+
+## License
+
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.

@@ -1,4 +1,4 @@
-# Data directories
+# Data directories (may contain sensitive conversation data)
 data/raw/*
 data/processed/*
 outputs/*
@@ -43,10 +43,20 @@ venv.bak/
 # IDE
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 *~
 
 # OS
 .DS_Store
-Thumbs.db 
+Thumbs.db
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# Linting
+.ruff_cache/
