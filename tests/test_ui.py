@@ -16,7 +16,9 @@ Requires the ``live_server_url`` and ``sample_json_file`` fixtures from conftest
 import re
 
 import pytest
-from playwright.sync_api import Page, expect
+
+pw = pytest.importorskip("playwright", reason="pip install -e '.[ui]' to run UI tests")
+from playwright.sync_api import Page, expect  # noqa: E402
 
 pytestmark = pytest.mark.ui
 
