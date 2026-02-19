@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GenAI Categorizer</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+/* RESET & VARIABLES */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-base:    #06060f;
+  --bg-surface: #0f1021;
+  --bg-card:    #161830;
+  --bg-hover:   #1e2148;
+  --border:     #252952;
+  --border-light:#2f3466;
+  --text:       #e4e6f0;
+  --text-dim:   #8b8fb3;
+  --text-muted: #5a5e82;
+  --accent:     #6366f1;
+  --accent-glow: rgba(99, 102, 241, .25);
+  --success:    #10b981;
+  --warning:    #f59e0b;
+  --danger:     #ef4444;
+  --radius:     14px;
+  --radius-sm:  8px;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-base);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 32px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 100;
+  backdrop-filter: blur(12px);
+}
+.logo { display: flex; align-items: center; gap: 12px; }
+.logo-icon {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 16px; color: #fff;
+}
+.logo h1 { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+.logo span { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+.header-actions { display: flex; align-items: center; gap: 12px; }
+
+.btn {
+  padding: 8px 18px; border-radius: var(--radius-sm); border: none;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all .2s;
+}
+.btn-ghost {
+  background: transparent; color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { background: var(--bg-hover); color: var(--text); }
+.hidden { display: none !important; }
+
+#upload-section {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; min-height: calc(100vh - 72px);
+  padding: 40px 24px;
+  animation: fadeIn .5s ease;
+}
+
+.drop-zone {
+  width: 100%; max-width: 640px;
+  border: 2px dashed var(--border-light);
+  border-radius: 20px;
+  padding: 64px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .3s ease;
+  background: var(--bg-surface);
+  position: relative;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, .04);
+  box-shadow: 0 0 40px var(--accent-glow);
+}
+.drop-zone.drag-over { transform: scale(1.01); }
+
+.drop-zone svg {
+  width: 56px; height: 56px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  transition: all .3s;
+}
+.drop-zone:hover svg, .drop-zone.drag-over svg { color: var(--accent); }
+
+.drop-zone h2 {
+  font-size: 22px; font-weight: 700;
+  margin-bottom: 8px; letter-spacing: -.01em;
+}
+.drop-zone p { color: var(--text-dim); font-size: 14px; margin-bottom: 24px; }
+.drop-zone strong { color: var(--text); }
+
+.browse-btn {
+  padding: 10px 28px; border-radius: var(--radius-sm);
+  background: var(--accent); color: #fff; border: none;
+  font-family: inherit; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: all .2s;
+}
+.browse-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+
+.file-list {
+  width: 100%; max-width: 640px;
+  margin-top: 20px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.file-chip {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; border-radius: var(--radius-sm);
+  background: var(--bg-card); border: 1px solid var(--border);
+  font-size: 13px; animation: fadeInUp .3s ease;
+}
+.file-chip .name { font-weight: 500; }
+.file-chip .size { color: var(--text-muted); font-size: 12px; }
+.file-chip .remove {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 16px; padding: 0 4px;
+}
+.file-chip .remove:hover { color: var(--danger); }
+
+#loading-section {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; min-height: calc(100vh - 72px);
+  gap: 24px; animation: fadeIn .3s ease;
+}
+.spinner {
+  width: 48px; height: 48px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+#loading-section p { color: var(--text-dim); font-size: 15px; }
+#loading-stage { font-weight: 600; color: var(--text); }
+
+#dashboard {
+  padding: 28px 32px 60px;
+  max-width: 1400px;
+  margin: 0 auto;
+  animation: fadeIn .5s ease;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.summary-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  position: relative;
+  overflow: hidden;
+  animation: fadeInUp .5s ease both;
+}
+.summary-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--card-accent, var(--accent));
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.summary-card:nth-child(1) { --card-accent: #6366f1; animation-delay: .05s; }
+.summary-card:nth-child(2) { --card-accent: #06b6d4; animation-delay: .10s; }
+.summary-card:nth-child(3) { --card-accent: #8b5cf6; animation-delay: .15s; }
+.summary-card:nth-child(4) { --card-accent: #10b981; animation-delay: .20s; }
+.summary-card:nth-child(5) { --card-accent: #f59e0b; animation-delay: .25s; }
+.card-value {
+  font-size: 32px; font-weight: 800; letter-spacing: -.02em;
+  line-height: 1.1; margin-bottom: 4px;
+}
+.card-label { font-size: 12px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+
+.charts-row { display: grid; gap: 16px; margin-bottom: 16px; }
+.charts-row.two-col { grid-template-columns: 2fr 1fr; }
+.charts-row.three-col { grid-template-columns: repeat(3, 1fr); }
+
+.chart-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  animation: fadeInUp .5s ease both;
+}
+.chart-card h3 {
+  font-size: 14px; font-weight: 600;
+  color: var(--text-dim); margin-bottom: 16px;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.chart-wrapper { position: relative; width: 100%; }
+
+.table-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-top: 16px;
+  animation: fadeInUp .5s ease both;
+  animation-delay: .3s;
+}
+.table-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 24px;
+  flex-wrap: wrap; gap: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.table-header h3 {
+  font-size: 14px; font-weight: 600; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.table-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+.search-box {
+  padding: 8px 14px; border-radius: var(--radius-sm);
+  background: var(--bg-surface); border: 1px solid var(--border);
+  color: var(--text); font-family: inherit; font-size: 13px;
+  width: 220px; outline: none; transition: border-color .2s;
+}
+.search-box:focus { border-color: var(--accent); }
+.search-box::placeholder { color: var(--text-muted); }
+
+.filter-select {
+  padding: 8px 14px; border-radius: var(--radius-sm);
+  background: var(--bg-surface); border: 1px solid var(--border);
+  color: var(--text); font-family: inherit; font-size: 13px;
+  outline: none; cursor: pointer;
+}
+
+.category-chips {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.chip {
+  padding: 4px 12px; border-radius: 20px;
+  font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: all .2s;
+  border: 1px solid var(--border);
+  background: transparent; color: var(--text-dim);
+}
+.chip:hover { border-color: var(--accent); color: var(--text); }
+.chip.active {
+  background: var(--chip-color, var(--accent));
+  border-color: transparent;
+  color: #fff;
+}
+
+.table-wrapper { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  padding: 12px 16px; text-align: left;
+  font-size: 11px; font-weight: 600;
+  color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: .06em;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer; user-select: none; white-space: nowrap;
+  transition: color .2s;
+}
+thead th:hover { color: var(--text); }
+thead th .sort-arrow { margin-left: 4px; font-size: 10px; }
+
+tbody tr {
+  border-bottom: 1px solid rgba(37, 41, 82, .4);
+  transition: background .15s;
+}
+tbody tr:hover { background: var(--bg-hover); }
+tbody td { padding: 12px 16px; vertical-align: top; }
+
+.cat-badge {
+  display: inline-block;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.conf-bar { display: flex; align-items: center; gap: 8px; }
+.conf-bar .bar {
+  width: 60px; height: 6px;
+  background: var(--border); border-radius: 3px; overflow: hidden;
+}
+.conf-bar .bar .fill { height: 100%; border-radius: 3px; transition: width .4s ease; }
+.complexity-badge {
+  display: inline-block;
+  padding: 2px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+}
+
+.text-preview {
+  max-width: 300px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  color: var(--text-dim); cursor: pointer;
+}
+.text-preview.expanded { white-space: normal; overflow: visible; }
+
+.pagination {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  font-size: 13px; color: var(--text-muted);
+}
+.page-btns { display: flex; gap: 6px; }
+.page-btn {
+  padding: 6px 12px; border-radius: 6px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  color: var(--text-dim); font-family: inherit; font-size: 12px;
+  cursor: pointer; transition: all .2s;
+}
+.page-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.page-btn:disabled { opacity: .4; cursor: default; }
+.page-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.empty-state {
+  text-align: center; padding: 48px 24px;
+  color: var(--text-muted); font-size: 14px;
+}
+
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  padding: 14px 24px; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 500;
+  background: var(--bg-card); border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0,0,0,.4);
+  z-index: 1000;
+  animation: slideUp .3s ease, fadeOut .3s ease 3s forwards;
+}
+.toast.success { border-color: var(--success); color: var(--success); }
+.toast.error { border-color: var(--danger); color: var(--danger); }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeOut { to { opacity: 0; pointer-events: none; } }
+
+@media (max-width: 1024px) {
+  .charts-row.two-col { grid-template-columns: 1fr; }
+  .charts-row.three-col { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 640px) {
+  header { padding: 14px 16px; }
+  #dashboard { padding: 16px; }
+  .charts-row.three-col { grid-template-columns: 1fr; }
+  .summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .search-box { width: 100%; }
+}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <div class="logo-icon">G</div>
+      <div>
+        <h1>GenAI Categorizer</h1>
+        <span>Conversation Analytics Dashboard</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="btn-new" class="btn btn-ghost hidden" onclick="resetToUpload()">+ New Analysis</button>
+    </div>
+  </header>
+
+  <section id="upload-section">
+    <div id="drop-zone" class="drop-zone">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <h2>Drop your conversation files here</h2>
+      <p>Supports <strong>JSON</strong> (Claude, ChatGPT exports) and <strong>CSV</strong> files<br>
+         <small style="color:var(--text-muted)">Runs entirely in your browser — no data leaves your machine</small></p>
+      <button class="browse-btn" onclick="fileInput.click()">Browse Files</button>
+      <input type="file" id="file-input" multiple accept=".json,.csv" hidden>
+    </div>
+    <div id="file-list" class="file-list"></div>
+  </section>
+
+  <section id="loading-section" class="hidden">
+    <div class="spinner"></div>
+    <p><span id="loading-stage">Reading files</span>…</p>
+  </section>
+
+  <section id="dashboard" class="hidden">
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="card-value" id="stat-total">0</div>
+        <div class="card-label">Conversations</div>
+      </div>
+      <div class="summary-card">
+        <div class="card-value" id="stat-categories">0</div>
+        <div class="card-label">Categories</div>
+      </div>
+      <div class="summary-card">
+        <div class="card-value" id="stat-languages">0</div>
+        <div class="card-label">Languages</div>
+      </div>
+      <div class="summary-card">
+        <div class="card-value" id="stat-confidence">0</div>
+        <div class="card-label">Avg Confidence</div>
+      </div>
+      <div class="summary-card">
+        <div class="card-value" id="stat-files">0</div>
+        <div class="card-label">Files Processed</div>
+      </div>
+    </div>
+
+    <div class="charts-row two-col">
+      <div class="chart-card" style="animation-delay:.15s">
+        <h3>Category Distribution</h3>
+        <div class="chart-wrapper"><canvas id="chart-categories"></canvas></div>
+      </div>
+      <div class="chart-card" style="animation-delay:.2s">
+        <h3>Languages</h3>
+        <div class="chart-wrapper"><canvas id="chart-languages"></canvas></div>
+      </div>
+    </div>
+
+    <div class="charts-row three-col">
+      <div class="chart-card" style="animation-delay:.25s">
+        <h3>Complexity</h3>
+        <div class="chart-wrapper"><canvas id="chart-complexity"></canvas></div>
+      </div>
+      <div class="chart-card" style="animation-delay:.3s">
+        <h3>Voice vs Text</h3>
+        <div class="chart-wrapper"><canvas id="chart-voice"></canvas></div>
+      </div>
+      <div class="chart-card" style="animation-delay:.35s">
+        <h3>Confidence Scores</h3>
+        <div class="chart-wrapper"><canvas id="chart-confidence"></canvas></div>
+      </div>
+    </div>
+
+    <div class="table-section">
+      <div class="table-header">
+        <h3>Conversations <span id="table-count" style="color:var(--text-muted);font-weight:400"></span></h3>
+        <div class="table-controls">
+          <input class="search-box" id="search-input" type="text" placeholder="Search conversations…">
+          <select class="filter-select" id="category-filter">
+            <option value="">All Categories</option>
+          </select>
+          <select class="filter-select" id="complexity-filter">
+            <option value="">All Complexity</option>
+            <option value="simple">Simple</option>
+            <option value="medium">Medium</option>
+            <option value="complex">Complex</option>
+          </select>
+        </div>
+      </div>
+      <div id="category-chips" class="category-chips"></div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th data-col="conversation_id">ID <span class="sort-arrow"></span></th>
+              <th data-col="text_preview">Preview <span class="sort-arrow"></span></th>
+              <th data-col="main_category">Category <span class="sort-arrow"></span></th>
+              <th data-col="subcategory">Subcategory <span class="sort-arrow"></span></th>
+              <th data-col="language">Lang <span class="sort-arrow"></span></th>
+              <th data-col="confidence_score">Confidence <span class="sort-arrow"></span></th>
+              <th data-col="complexity">Complexity <span class="sort-arrow"></span></th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span id="page-info"></span>
+        <div class="page-btns" id="page-btns"></div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// CATEGORIZATION ENGINE (ported from Python src/clustering.py)
+// ═══════════════════════════════════════════════════════════════════════════════
+const CATEGORIES = {
+  'Learning/Education': {
+    keywords: ['explain','teach','learn','understand','what is','how does','define','example','tutorial','forklar','forklaring','forstå','lær','hvordan'],
+    subcategories: {
+      'Concept Understanding': ['what is','define','concept','mean','forklar','hvad er'],
+      'How-to Learning': ['how to','steps','guide','tutorial','hvordan'],
+      'Problem Solving': ['solve','solution','answer','help me understand'],
+      'Academic Topics': ['method','theory','model','metode','teori','analyse'],
+    },
+  },
+  'Code Development': {
+    keywords: ['code','program','function','debug','error','python','javascript','api','database','git'],
+    subcategories: {
+      'Bug Fixing': ['error','bug','fix','issue','debug'],
+      'Feature Development': ['create','implement','develop','add feature'],
+      'Code Review': ['review','improve','optimize','refactor'],
+    },
+  },
+  'Writing Assistance': {
+    keywords: ['write','draft','review','proofread','text','article','edit','grammar'],
+    subcategories: {
+      'Content Creation': ['write','create','draft'],
+      'Editing': ['edit','proofread','review','improve'],
+      'Format/Style': ['format','style','structure'],
+    },
+  },
+  'Analysis/Research': {
+    keywords: ['analyze','research','study','investigate','compare','evaluate','data','findings'],
+    subcategories: {
+      'Data Analysis': ['data','statistics','numbers','trends'],
+      'Research Review': ['research','paper','study','literature'],
+      'Comparative Analysis': ['compare','difference','versus','pros and cons'],
+    },
+  },
+  'Creative & Ideation': {
+    keywords: ['create','design','generate','brainstorm','imagine','creative','innovative','idea','suggest','think of','come up with','possibilities','concept'],
+    subcategories: {
+      'Visual Design': ['design','visual','layout','look'],
+      'Idea Generation': ['brainstorm','ideas','possibilities','suggest'],
+      'Creative Problem Solving': ['solution','solve','address','improve'],
+      'Innovation': ['innovative','new','unique','original'],
+      'Concept Development': ['develop','refine','enhance','iterate'],
+    },
+  },
+  'Professional/Business': {
+    keywords: ['business','professional','company','client','strategy','market','industry'],
+    subcategories: {
+      'Strategy': ['strategy','plan','approach'],
+      'Client/Customer': ['client','customer','service'],
+      'Business Analysis': ['analysis','market','industry'],
+    },
+  },
+  'Technical Support': {
+    keywords: ['help','fix','issue','problem','support','error','troubleshoot','sync','synch','calendar','setup','connect','integration','configure','settings','apple','microsoft','teams','outlook'],
+    subcategories: {
+      'Troubleshooting': ['troubleshoot','diagnose','fix','issue','error'],
+      'Setup/Installation': ['setup','install','configure','connect','sync'],
+      'Usage Help': ['how to use','help with','guide','how do i'],
+      'Integration Issues': ['sync','connect','integration','between','with'],
+    },
+  },
+  'Personal Projects': {
+    keywords: ['project','personal','help me with','my own','portfolio','hobby'],
+    subcategories: {
+      'Project Planning': ['plan','structure','organize'],
+      'Implementation': ['build','create','develop'],
+      'Review/Feedback': ['review','feedback','improve'],
+    },
+  },
+  'SoMe/Marketing': {
+    keywords: ['social media','marketing','post','content','campaign','LinkedIn','Twitter','engagement','opslag','sæson','hold','announce','announcement','season','team','group','start'],
+    subcategories: {
+      'Content Creation': ['post','content','create','opslag','write post'],
+      'Event Announcements': ['season','sæson','event','start','announce','new'],
+      'Team/Group Updates': ['team','hold','group','members','community'],
+      'Campaign Planning': ['campaign','strategy','plan','theme','tema'],
+    },
+  },
+  'DALL-E/Image': {
+    keywords: ['image','picture','photo','generate image','create image','dall-e','dalle','draw','illustration','visual','artwork'],
+    subcategories: {
+      'Image Generation': ['generate','create','make'],
+      'Image Editing': ['edit','modify','adjust'],
+      'Style Transfer': ['style','artistic','filter'],
+      'Visual Description': ['describe','detail','explain image'],
+    },
+  },
+  'Cooking/Food': {
+    keywords: ['food','cook','recipe','ingredient','meal','dish','kitchen','bake','pumpkin','vegetable','fruit','squash','cuisine','eat','dinner','lunch','breakfast'],
+    subcategories: {
+      'Recipe Help': ['recipe','how to make','cook','bake','prepare'],
+      'Ingredient Questions': ['ingredient','what is','substitute','alternative'],
+      'Food Identification': ['what is this','identify','which','type of','variety'],
+      'Meal Planning': ['meal','plan','menu','dinner','lunch','breakfast'],
+    },
+  },
+  'Information/Curiosity': {
+    keywords: ['what is','where is','why does','how does','tell me about','find information','information about','can you find','explain why','hvorfor','hvor','hvad','find ud af','finde information','information om'],
+    subcategories: {
+      'General Knowledge': ['what is','tell me about','explain','fortæl'],
+      'Location/Place Questions': ['where is','location','place','hvor'],
+      'Cause/Effect': ['why does','how does','what causes','hvorfor'],
+      'Research Requests': ['find information','research','look up','find ud af','søg'],
+      'Industry/Topic Research': ['industry','sector','field','branche','område','digitalization','digitalisering'],
+    },
+  },
+};
+
+const VOICE_KEYWORDS = ['transcript','audio','voice','speech','spoken','recording','sound'];
+
+function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+const compiledCategories = {};
+for (const [cat, info] of Object.entries(CATEGORIES)) {
+  const mainRe = new RegExp('\\b(?:' + info.keywords.map(escapeRegex).join('|') + ')\\b', 'gi');
+  const subs = {};
+  for (const [subName, subKws] of Object.entries(info.subcategories)) {
+    subs[subName] = new RegExp('\\b(?:' + subKws.map(escapeRegex).join('|') + ')\\b', 'gi');
+  }
+  compiledCategories[cat] = { mainRe, subs };
+}
+
+const voiceRe = new RegExp('\\b(?:' + VOICE_KEYWORDS.map(escapeRegex).join('|') + ')\\b', 'i');
+
+function categorizeText(text) {
+  const lower = text.toLowerCase();
+  let bestCat = 'Other', bestSub = 'Uncategorized', bestScore = 0;
+  const allScores = {};
+
+  for (const [cat, { mainRe, subs }] of Object.entries(compiledCategories)) {
+    mainRe.lastIndex = 0;
+    const mainHits = (lower.match(mainRe) || []).length;
+    let subTotal = 0, topSub = 'Uncategorized', topSubScore = 0;
+
+    for (const [subName, subRe] of Object.entries(subs)) {
+      subRe.lastIndex = 0;
+      const n = (lower.match(subRe) || []).length;
+      subTotal += n;
+      if (n > topSubScore) { topSubScore = n; topSub = subName; }
+    }
+
+    const total = mainHits + subTotal;
+    allScores[cat] = total;
+    if (total > bestScore) {
+      bestScore = total;
+      bestCat = cat;
+      bestSub = topSub;
+    }
+  }
+
+  if (bestScore === 0) { bestCat = 'Other'; bestSub = 'Uncategorized'; }
+
+  return {
+    main_category: bestCat,
+    subcategory: bestSub,
+    is_voice: voiceRe.test(text),
+    confidence_score: bestScore,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TEXT EXTRACTION (ported from Python src/data_processing.py)
+// ═══════════════════════════════════════════════════════════════════════════════
+function extractText(conv) {
+  const texts = [];
+
+  if (conv.chat_messages) {
+    for (const msg of conv.chat_messages) {
+      if (msg.text && msg.text.trim()) { texts.push(msg.text.trim()); continue; }
+      const content = msg.content;
+      if (Array.isArray(content)) {
+        for (const item of content) {
+          if (typeof item === 'object' && item !== null) {
+            if (item.type === 'text' && item.text) texts.push(item.text.trim());
+            else if (item.text) texts.push(item.text.trim());
+          } else if (typeof item === 'string' && item.trim()) {
+            texts.push(item.trim());
+          }
+        }
+      }
+    }
+    return texts.join(' ');
+  }
+
+  if (conv.mapping) {
+    for (const msgData of Object.values(conv.mapping)) {
+      const message = msgData && msgData.message;
+      if (!message) continue;
+      const content = message.content;
+      if (content && typeof content === 'object' && content.parts) {
+        for (const part of content.parts) {
+          if (typeof part === 'object' && part !== null) {
+            if (part.content_type === 'audio_transcription' && part.text)
+              texts.push(part.text.trim());
+          } else if (typeof part === 'string' && part.trim()) {
+            texts.push(part.trim());
+          }
+        }
+      }
+    }
+    return texts.join(' ');
+  }
+
+  return limitedDeepSearch(conv, 3, 0);
+}
+
+function limitedDeepSearch(obj, maxDepth, depth) {
+  if (depth >= maxDepth) return '';
+  const texts = [];
+
+  if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+    for (const field of ['text', 'content', 'message']) {
+      if (typeof obj[field] === 'string' && obj[field].trim()) texts.push(obj[field].trim());
+    }
+    let count = 0;
+    for (const val of Object.values(obj)) {
+      if (count++ > 10) break;
+      const r = limitedDeepSearch(val, maxDepth, depth + 1);
+      if (r) { texts.push(r); if (texts.length > 5) break; }
+    }
+  } else if (Array.isArray(obj)) {
+    for (let i = 0; i < Math.min(obj.length, 20); i++) {
+      const r = limitedDeepSearch(obj[i], maxDepth, depth + 1);
+      if (r) { texts.push(r); if (texts.length > 5) break; }
+    }
+  }
+
+  return texts.join(' ');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FILE PARSING
+// ═══════════════════════════════════════════════════════════════════════════════
+function extractFromJson(data, filename) {
+  const items = Array.isArray(data) ? data : (typeof data === 'object' && data !== null ? [data] : []);
+  const rows = [];
+  items.forEach((conv, i) => {
+    const text = extractText(conv);
+    if (!text.trim()) return;
+    const convId = conv.uuid || conv.title || conv.id || `conv_${i + 1}`;
+    rows.push({ conversation_id: String(convId), text, language: 'auto', source_file: filename });
+  });
+  return rows;
+}
+
+function extractFromCsv(csvText, filename) {
+  const result = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+  if (!result.data || !result.meta.fields.includes('text')) return [];
+  const rows = [];
+  result.data.forEach((r, idx) => {
+    const text = String(r.text || '');
+    if (!text.trim() || text === 'nan') return;
+    rows.push({
+      conversation_id: String(r.conversation_id || `row_${idx}`),
+      text,
+      language: String(r.language || 'unknown'),
+      source_file: filename,
+    });
+  });
+  return rows;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONSTANTS & STATE
+// ═══════════════════════════════════════════════════════════════════════════════
+const CATEGORY_COLORS = {
+  'Learning/Education':'#6366f1','Code Development':'#06b6d4','Writing Assistance':'#8b5cf6',
+  'Analysis/Research':'#14b8a6','Creative & Ideation':'#f43f5e','Professional/Business':'#3b82f6',
+  'Technical Support':'#f97316','Personal Projects':'#84cc16','SoMe/Marketing':'#ec4899',
+  'DALL-E/Image':'#a855f7','Cooking/Food':'#eab308','Information/Curiosity':'#22d3ee','Other':'#64748b',
+};
+const COMPLEXITY_COLORS = { simple: '#10b981', medium: '#f59e0b', complex: '#ef4444' };
+const PAGE_SIZE = 25;
+
+let state = {
+  files: [], conversations: [], metrics: null, filteredData: [],
+  sortCol: null, sortDir: 'asc', currentPage: 1,
+  searchQuery: '', categoryFilter: '', complexityFilter: '', charts: {},
+};
+
+const fileInput    = document.getElementById('file-input');
+const dropZone     = document.getElementById('drop-zone');
+const fileList     = document.getElementById('file-list');
+const uploadSec    = document.getElementById('upload-section');
+const loadingSec   = document.getElementById('loading-section');
+const dashboard    = document.getElementById('dashboard');
+const loadingStage = document.getElementById('loading-stage');
+const btnNew       = document.getElementById('btn-new');
+const searchInput  = document.getElementById('search-input');
+const catFilter    = document.getElementById('category-filter');
+const compFilter   = document.getElementById('complexity-filter');
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FILE HANDLING
+// ═══════════════════════════════════════════════════════════════════════════════
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over'); addFiles(e.dataTransfer.files);
+});
+dropZone.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') fileInput.click(); });
+fileInput.addEventListener('change', () => { addFiles(fileInput.files); fileInput.value = ''; });
+
+function addFiles(fileListObj) {
+  const valid = Array.from(fileListObj).filter(f =>
+    f.name.toLowerCase().endsWith('.json') || f.name.toLowerCase().endsWith('.csv')
+  );
+  if (!valid.length) { showToast('Please drop JSON or CSV files', 'error'); return; }
+  state.files.push(...valid);
+  renderFileList();
+  analyzeFiles();
+}
+
+function removeFile(idx) { state.files.splice(idx, 1); renderFileList(); }
+
+function renderFileList() {
+  fileList.innerHTML = state.files.map((f, i) => `
+    <div class="file-chip">
+      <span class="name">${escHtml(f.name)}</span>
+      <span class="size">${formatBytes(f.size)}</span>
+      <button class="remove" onclick="removeFile(${i})" title="Remove">&times;</button>
+    </div>
+  `).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CLIENT-SIDE ANALYSIS
+// ═══════════════════════════════════════════════════════════════════════════════
+async function analyzeFiles() {
+  if (!state.files.length) return;
+  showSection('loading');
+  animateLoadingStages();
+
+  try {
+    const allRows = [];
+    for (const file of state.files) {
+      const text = await file.text();
+      const name = file.name;
+      if (name.toLowerCase().endsWith('.json')) {
+        try {
+          const data = JSON.parse(text);
+          allRows.push(...extractFromJson(data, name));
+        } catch (_) { /* skip malformed JSON */ }
+      } else if (name.toLowerCase().endsWith('.csv')) {
+        allRows.push(...extractFromCsv(text, name));
+      }
+    }
+
+    if (!allRows.length) {
+      showToast('No conversations found in the uploaded files', 'error');
+      showSection('upload');
+      return;
+    }
+
+    const conversations = allRows.map(row => {
+      const cat = categorizeText(row.text);
+      const length = row.text.length;
+      const complexity = length <= 100 ? 'simple' : (length <= 500 ? 'medium' : 'complex');
+      const preview = row.text.length > 300 ? row.text.slice(0, 300) + '\u2026' : row.text;
+
+      return {
+        conversation_id: row.conversation_id,
+        text_preview: preview,
+        language: row.language,
+        source_file: row.source_file,
+        main_category: cat.main_category,
+        subcategory: cat.subcategory,
+        is_voice: cat.is_voice,
+        confidence_score: cat.confidence_score,
+        char_length: length,
+        complexity,
+      };
+    });
+
+    state.conversations = conversations;
+    state.metrics = computeMetrics(conversations);
+    renderDashboard();
+    showSection('dashboard');
+    showToast(`${conversations.length} conversations categorized`, 'success');
+  } catch (err) {
+    console.error(err);
+    showToast('Analysis failed: ' + err.message, 'error');
+    showSection('upload');
+  }
+}
+
+function computeMetrics(conversations) {
+  const n = conversations.length;
+  if (!n) return {};
+  const cats = {}, subcats = {}, langs = {}, complexities = {};
+  let voiceCount = 0, totalConf = 0, highConf = 0, totalLength = 0;
+
+  for (const c of conversations) {
+    cats[c.main_category] = (cats[c.main_category] || 0) + 1;
+    subcats[c.subcategory] = (subcats[c.subcategory] || 0) + 1;
+    langs[c.language] = (langs[c.language] || 0) + 1;
+    complexities[c.complexity] = (complexities[c.complexity] || 0) + 1;
+    if (c.is_voice) voiceCount++;
+    totalConf += c.confidence_score;
+    if (c.confidence_score > 5) highConf++;
+    totalLength += c.char_length;
+  }
+
+  const sortDesc = o => Object.fromEntries(Object.entries(o).sort((a, b) => b[1] - a[1]));
+  return {
+    total_conversations: n,
+    avg_length: Math.round(totalLength / n * 10) / 10,
+    category_distribution: sortDesc(cats),
+    subcategory_distribution: sortDesc(subcats),
+    language_distribution: sortDesc(langs),
+    complexity_distribution: complexities,
+    voice_conversations: voiceCount,
+    confidence_avg: Math.round(totalConf / n * 10) / 10,
+    confidence_high_pct: Math.round(highConf / n * 1000) / 10,
+    files_processed: new Set(conversations.map(c => c.source_file)).size,
+  };
+}
+
+let loadingInterval;
+function animateLoadingStages() {
+  const stages = ['Reading files', 'Extracting conversations', 'Categorizing topics', 'Building visualizations'];
+  let i = 0;
+  loadingStage.textContent = stages[0];
+  loadingInterval = setInterval(() => {
+    i = Math.min(i + 1, stages.length - 1);
+    loadingStage.textContent = stages[i];
+  }, 400);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECTION MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════════
+function showSection(name) {
+  clearInterval(loadingInterval);
+  uploadSec.classList.toggle('hidden', name !== 'upload');
+  loadingSec.classList.toggle('hidden', name !== 'loading');
+  dashboard.classList.toggle('hidden', name !== 'dashboard');
+  btnNew.classList.toggle('hidden', name !== 'dashboard');
+}
+
+function resetToUpload() {
+  state.files = []; state.conversations = []; state.metrics = null;
+  fileList.innerHTML = '';
+  destroyCharts();
+  showSection('upload');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD RENDERING
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderDashboard() {
+  const m = state.metrics;
+  animateCounter('stat-total', m.total_conversations);
+  animateCounter('stat-categories', Object.keys(m.category_distribution).length);
+  animateCounter('stat-languages', Object.keys(m.language_distribution).length);
+  animateCounter('stat-confidence', m.confidence_avg, true);
+  animateCounter('stat-files', m.files_processed);
+
+  destroyCharts();
+  renderCategoryChart();
+  renderLanguageChart();
+  renderComplexityChart();
+  renderVoiceChart();
+  renderConfidenceChart();
+  populateFilters();
+  applyFilters();
+}
+
+function animateCounter(id, target, isFloat = false) {
+  const el = document.getElementById(id);
+  const duration = 800, start = performance.now();
+  function update(now) {
+    const p = Math.min((now - start) / duration, 1);
+    const ease = 1 - Math.pow(1 - p, 3);
+    el.textContent = isFloat ? (ease * target).toFixed(1) : Math.round(ease * target);
+    if (p < 1) requestAnimationFrame(update);
+  }
+  requestAnimationFrame(update);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHARTS
+// ═══════════════════════════════════════════════════════════════════════════════
+const chartDefaults = {
+  responsive: true, maintainAspectRatio: true,
+  plugins: {
+    legend: { labels: { color: '#8b8fb3', font: { family: 'Inter', size: 11 }, padding: 16, usePointStyle: true, pointStyle: 'circle' } },
+  },
+};
+
+function getCtx(id) { return document.getElementById(id).getContext('2d'); }
+
+function renderCategoryChart() {
+  const dist = state.metrics.category_distribution;
+  const labels = Object.keys(dist), values = Object.values(dist);
+  const colors = labels.map(l => CATEGORY_COLORS[l] || '#64748b');
+  state.charts.categories = new Chart(getCtx('chart-categories'), {
+    type: 'bar',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: 'transparent', borderRadius: 6, borderSkipped: false }] },
+    options: {
+      ...chartDefaults, indexAxis: 'y',
+      plugins: { ...chartDefaults.plugins, legend: { display: false } },
+      scales: {
+        x: { grid: { color: 'rgba(37,41,82,.4)' }, ticks: { color: '#5a5e82', font: { family: 'Inter', size: 11 } } },
+        y: { grid: { display: false }, ticks: { color: '#8b8fb3', font: { family: 'Inter', size: 12 } } },
+      },
+      onClick: (_, els) => { if (els.length) { catFilter.value = labels[els[0].index]; applyFilters(); } },
+    },
+  });
+}
+
+function renderLanguageChart() {
+  const dist = state.metrics.language_distribution;
+  const langColors = ['#6366f1','#06b6d4','#8b5cf6','#14b8a6','#f43f5e','#3b82f6','#f97316','#84cc16'];
+  state.charts.languages = new Chart(getCtx('chart-languages'), {
+    type: 'doughnut',
+    data: { labels: Object.keys(dist), datasets: [{ data: Object.values(dist), backgroundColor: langColors, borderColor: '#161830', borderWidth: 3 }] },
+    options: { ...chartDefaults, cutout: '65%' },
+  });
+}
+
+function renderComplexityChart() {
+  const dist = state.metrics.complexity_distribution;
+  const order = ['simple','medium','complex'];
+  const labels = order.filter(k => k in dist), values = labels.map(k => dist[k]);
+  const colors = labels.map(k => COMPLEXITY_COLORS[k]);
+  state.charts.complexity = new Chart(getCtx('chart-complexity'), {
+    type: 'doughnut',
+    data: { labels: labels.map(l => l.charAt(0).toUpperCase() + l.slice(1)), datasets: [{ data: values, backgroundColor: colors, borderColor: '#161830', borderWidth: 3 }] },
+    options: { ...chartDefaults, cutout: '65%' },
+  });
+}
+
+function renderVoiceChart() {
+  const voice = state.metrics.voice_conversations, text = state.metrics.total_conversations - voice;
+  state.charts.voice = new Chart(getCtx('chart-voice'), {
+    type: 'doughnut',
+    data: { labels: ['Text','Voice'], datasets: [{ data: [text, voice], backgroundColor: ['#6366f1','#f97316'], borderColor: '#161830', borderWidth: 3 }] },
+    options: { ...chartDefaults, cutout: '65%' },
+  });
+}
+
+function renderConfidenceChart() {
+  const buckets = { '0': 0, '1-3': 0, '4-7': 0, '8-15': 0, '16+': 0 };
+  state.conversations.forEach(c => {
+    const s = c.confidence_score;
+    if (s === 0) buckets['0']++; else if (s <= 3) buckets['1-3']++; else if (s <= 7) buckets['4-7']++; else if (s <= 15) buckets['8-15']++; else buckets['16+']++;
+  });
+  state.charts.confidence = new Chart(getCtx('chart-confidence'), {
+    type: 'bar',
+    data: { labels: Object.keys(buckets), datasets: [{ data: Object.values(buckets), backgroundColor: ['#64748b','#f59e0b','#06b6d4','#6366f1','#10b981'], borderRadius: 6, borderSkipped: false }] },
+    options: {
+      ...chartDefaults,
+      plugins: { ...chartDefaults.plugins, legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#8b8fb3', font: { family: 'Inter', size: 11 } } },
+        y: { grid: { color: 'rgba(37,41,82,.4)' }, ticks: { color: '#5a5e82', font: { family: 'Inter', size: 11 } } },
+      },
+    },
+  });
+}
+
+function destroyCharts() { Object.values(state.charts).forEach(c => c && c.destroy()); state.charts = {}; }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TABLE
+// ═══════════════════════════════════════════════════════════════════════════════
+function populateFilters() {
+  const cats = Object.keys(state.metrics.category_distribution);
+  catFilter.innerHTML = '<option value="">All Categories</option>' + cats.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
+  const chipsEl = document.getElementById('category-chips');
+  chipsEl.innerHTML = `<div class="chip active" data-cat="" style="--chip-color:var(--accent)">All</div>` +
+    cats.map(c => { const color = CATEGORY_COLORS[c] || '#64748b'; return `<div class="chip" data-cat="${escHtml(c)}" style="--chip-color:${color}">${escHtml(c)}</div>`; }).join('');
+  chipsEl.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      chipsEl.querySelectorAll('.chip').forEach(ch => ch.classList.remove('active'));
+      chip.classList.add('active'); catFilter.value = chip.dataset.cat; applyFilters();
+    });
+  });
+}
+
+searchInput.addEventListener('input', () => { state.searchQuery = searchInput.value; state.currentPage = 1; applyFilters(); });
+catFilter.addEventListener('change', () => { state.categoryFilter = catFilter.value; state.currentPage = 1; syncChips(); applyFilters(); });
+compFilter.addEventListener('change', () => { state.complexityFilter = compFilter.value; state.currentPage = 1; applyFilters(); });
+
+function syncChips() {
+  document.querySelectorAll('#category-chips .chip').forEach(ch => { ch.classList.toggle('active', ch.dataset.cat === state.categoryFilter); });
+}
+
+document.querySelectorAll('thead th[data-col]').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.col;
+    if (state.sortCol === col) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+    else { state.sortCol = col; state.sortDir = 'asc'; }
+    applyFilters(); updateSortArrows();
+  });
+});
+
+function updateSortArrows() {
+  document.querySelectorAll('thead th[data-col]').forEach(th => {
+    const arrow = th.querySelector('.sort-arrow');
+    arrow.textContent = th.dataset.col === state.sortCol ? (state.sortDir === 'asc' ? '\u25B2' : '\u25BC') : '';
+  });
+}
+
+function applyFilters() {
+  let data = [...state.conversations];
+  if (state.searchQuery) {
+    const q = state.searchQuery.toLowerCase();
+    data = data.filter(c => c.text_preview.toLowerCase().includes(q) || c.conversation_id.toLowerCase().includes(q) || c.main_category.toLowerCase().includes(q) || c.subcategory.toLowerCase().includes(q));
+  }
+  if (state.categoryFilter) data = data.filter(c => c.main_category === state.categoryFilter);
+  if (state.complexityFilter) data = data.filter(c => c.complexity === state.complexityFilter);
+  if (state.sortCol) {
+    data.sort((a, b) => {
+      let va = a[state.sortCol], vb = b[state.sortCol];
+      if (typeof va === 'number') return state.sortDir === 'asc' ? va - vb : vb - va;
+      va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
+      return state.sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    });
+  }
+  state.filteredData = data;
+  renderTable();
+}
+
+function renderTable() {
+  const data = state.filteredData;
+  const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
+  state.currentPage = Math.min(state.currentPage, totalPages);
+  const start = (state.currentPage - 1) * PAGE_SIZE;
+  const page = data.slice(start, start + PAGE_SIZE);
+
+  document.getElementById('table-count').textContent = `(${data.length})`;
+  const tbody = document.getElementById('table-body');
+  if (!page.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No conversations match your filters</td></tr>';
+  } else {
+    const maxConf = Math.max(...state.conversations.map(c => c.confidence_score), 1);
+    tbody.innerHTML = page.map(c => {
+      const color = CATEGORY_COLORS[c.main_category] || '#64748b';
+      const confPct = Math.round((c.confidence_score / maxConf) * 100);
+      const compColor = COMPLEXITY_COLORS[c.complexity] || '#64748b';
+      return `<tr>
+        <td style="color:var(--text-muted);font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(c.conversation_id)}">${escHtml(truncate(c.conversation_id, 18))}</td>
+        <td><div class="text-preview" onclick="this.classList.toggle('expanded')" title="Click to expand">${escHtml(c.text_preview)}</div></td>
+        <td><span class="cat-badge" style="background:${color}22;color:${color}">${escHtml(c.main_category)}</span></td>
+        <td style="font-size:12px;color:var(--text-dim)">${escHtml(c.subcategory)}</td>
+        <td style="text-transform:uppercase;font-size:11px;font-weight:600;letter-spacing:.04em">${escHtml(c.language)}</td>
+        <td><div class="conf-bar"><span style="min-width:20px;font-size:12px;font-weight:600">${c.confidence_score}</span><div class="bar"><div class="fill" style="width:${confPct}%;background:${confPct > 60 ? '#10b981' : confPct > 30 ? '#f59e0b' : '#64748b'}"></div></div></div></td>
+        <td><span class="complexity-badge" style="background:${compColor}22;color:${compColor}">${c.complexity}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  const pageInfo = document.getElementById('page-info');
+  pageInfo.textContent = data.length ? `${start + 1}\u2013${Math.min(start + PAGE_SIZE, data.length)} of ${data.length}` : '';
+  const pageBtns = document.getElementById('page-btns');
+  let btns = `<button class="page-btn" onclick="goPage(${state.currentPage - 1})" ${state.currentPage <= 1 ? 'disabled' : ''}>&laquo; Prev</button>`;
+  const maxBtns = 5;
+  let pStart = Math.max(1, state.currentPage - Math.floor(maxBtns / 2));
+  let pEnd = Math.min(totalPages, pStart + maxBtns - 1);
+  pStart = Math.max(1, pEnd - maxBtns + 1);
+  for (let p = pStart; p <= pEnd; p++) btns += `<button class="page-btn ${p === state.currentPage ? 'active' : ''}" onclick="goPage(${p})">${p}</button>`;
+  btns += `<button class="page-btn" onclick="goPage(${state.currentPage + 1})" ${state.currentPage >= totalPages ? 'disabled' : ''}>Next &raquo;</button>`;
+  pageBtns.innerHTML = btns;
+}
+
+function goPage(p) { state.currentPage = p; renderTable(); document.querySelector('.table-section').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════════════════════
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function truncate(s, n) { return s.length > n ? s.slice(0, n) + '\u2026' : s; }
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+  return (b / 1048576).toFixed(1) + ' MB';
+}
+function showToast(msg, type = 'success') {
+  const t = document.createElement('div'); t.className = `toast ${type}`; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 3500);
+}
+
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  if (e.target.closest('#drop-zone')) return;
+  if (dashboard.classList.contains('hidden')) return;
+  addFiles(e.dataTransfer.files);
+});
+  </script>
+</body>
+</html>
