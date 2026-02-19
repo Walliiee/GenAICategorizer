@@ -40,6 +40,14 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.1.0",
 ]
+ui = [
+    "pytest>=7.0",
+    "pytest-playwright>=0.4.0",
+    "playwright>=1.40.0",
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.23.0",
+    "python-multipart>=0.0.6",
+]
 performance = [
     "orjson>=3.8.0",
 ]
@@ -60,6 +68,9 @@ include = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "ui: Playwright browser-based UI tests (require the 'ui' extra)",
+]
 
 [tool.ruff]
 target-version = "py39"
