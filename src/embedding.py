@@ -7,8 +7,8 @@ and chunked processing for memory efficiency.
 
 import gc
 import hashlib
+import logging
 import os
-import pickle
 from pathlib import Path
 from typing import List, Optional
 
@@ -37,6 +37,7 @@ class EmbeddingGenerator:
         self.cache_dir = cache_dir
         self.model: Optional[SentenceTransformer] = None
         self.device = self._get_optimal_device()
+        self.logger = logging.getLogger(__name__)
         os.makedirs(self.cache_dir, exist_ok=True)
 
     # ------------------------------------------------------------------
@@ -68,28 +69,34 @@ class EmbeddingGenerator:
 
     def _get_cache_key(self, texts: List[str]) -> str:
         """Derive a deterministic cache key from model name and text content."""
-        content = f"{self.model_name}:{len(texts)}:{hash(tuple(texts))}"
-        return hashlib.md5(content.encode()).hexdigest()
+        digest = hashlib.sha256()
+        digest.update(self.model_name.encode("utf-8"))
+        digest.update(f"|{len(texts)}|".encode("utf-8"))
+        for text in texts:
+            encoded = text.encode("utf-8", errors="ignore")
+            digest.update(str(len(encoded)).encode("utf-8"))
+            digest.update(b":")
+            digest.update(encoded)
+            digest.update(b"|")
+        return digest.hexdigest()
 
     def _load_cached(self, cache_key: str) -> Optional[np.ndarray]:
         """Return cached embeddings if available, else ``None``."""
-        path = os.path.join(self.cache_dir, f"{cache_key}.pkl")
+        path = os.path.join(self.cache_dir, f"{cache_key}.npy")
         if os.path.exists(path):
             try:
-                with open(path, "rb") as f:
-                    return pickle.load(f)
-            except Exception as exc:
-                print(f"Cache load failed: {exc}")
+                return np.load(path, allow_pickle=False)
+            except (OSError, ValueError) as exc:
+                self.logger.warning("Cache load failed for %s: %s", path, exc)
         return None
 
     def _save_to_cache(self, embeddings: np.ndarray, cache_key: str) -> None:
         """Persist embeddings to the cache directory."""
-        path = os.path.join(self.cache_dir, f"{cache_key}.pkl")
+        path = os.path.join(self.cache_dir, f"{cache_key}.npy")
         try:
-            with open(path, "wb") as f:
-                pickle.dump(embeddings, f, protocol=pickle.HIGHEST_PROTOCOL)
-        except Exception as exc:
-            print(f"Cache save failed: {exc}")
+            np.save(path, embeddings, allow_pickle=False)
+        except OSError as exc:
+            self.logger.warning("Cache save failed for %s: %s", path, exc)
 
     # ------------------------------------------------------------------
     # Model loading
@@ -148,7 +155,13 @@ class EmbeddingGenerator:
                     normalize_embeddings=True,
                 )
                 all_embeddings.append(emb)
-            except Exception:
+            except Exception as exc:
+                self.logger.warning(
+                    "Chunk encoding failed with batch_size=%d on %s; retrying with batch_size=1: %s",
+                    batch_size,
+                    self.device,
+                    exc,
+                )
                 emb = self.model.encode(
                     chunk,
                     show_progress_bar=False,
@@ -219,9 +232,14 @@ def generate_embeddings_from_csv(
     )
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Run stage 2 embedding generation."""
     project_root = Path(__file__).resolve().parent.parent
     csv_path = str(project_root / "data" / "processed" / "cleaned_conversations.csv")
     out_path = str(project_root / "data" / "processed" / "embeddings.npy")
 
     generate_embeddings_from_csv(csv_path, out_path)
+
+
+if __name__ == "__main__":
+    main()

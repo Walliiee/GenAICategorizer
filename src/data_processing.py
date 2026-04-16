@@ -12,7 +12,6 @@ import hashlib
 import json
 import logging
 import os
-import pickle
 from collections import Counter
 from datetime import datetime
 from functools import lru_cache
@@ -54,8 +53,8 @@ class DataProcessor:
         self.cache_dir = cache_dir
         self.max_workers = max_workers or min(cpu_count(), 8)
         self.language_cache: Dict[str, str] = {}
-        self._setup_cache()
         self._setup_logging()
+        self._setup_cache()
 
     def _setup_cache(self) -> None:
         """Create cache directory and load any existing caches."""
@@ -72,27 +71,30 @@ class DataProcessor:
 
     def _load_language_cache(self) -> None:
         """Load persistent language detection cache from disk."""
-        cache_file = os.path.join(self.cache_dir, "language_cache.pkl")
+        cache_file = os.path.join(self.cache_dir, "language_cache.json")
         if os.path.exists(cache_file):
             try:
-                with open(cache_file, "rb") as f:
-                    self.language_cache = pickle.load(f)
-                logging.getLogger(__name__).info(
-                    "Loaded %d cached language detections", len(self.language_cache)
-                )
-            except Exception as exc:
-                logging.getLogger(__name__).warning(
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+                if not isinstance(loaded, dict):
+                    raise ValueError("language cache must be a JSON object")
+                self.language_cache = {
+                    str(k): str(v) for k, v in loaded.items() if isinstance(k, str)
+                }
+                self.logger.info("Loaded %d cached language detections", len(self.language_cache))
+            except (json.JSONDecodeError, OSError, ValueError, TypeError) as exc:
+                self.logger.warning(
                     "Failed to load language cache: %s", exc
                 )
                 self.language_cache = {}
 
     def _save_language_cache(self) -> None:
         """Persist language detection cache to disk."""
-        cache_file = os.path.join(self.cache_dir, "language_cache.pkl")
+        cache_file = os.path.join(self.cache_dir, "language_cache.json")
         try:
-            with open(cache_file, "wb") as f:
-                pickle.dump(self.language_cache, f, protocol=pickle.HIGHEST_PROTOCOL)
-        except Exception as exc:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(self.language_cache, f)
+        except OSError as exc:
             self.logger.warning("Failed to save language cache: %s", exc)
 
     @lru_cache(maxsize=10000)
@@ -117,7 +119,8 @@ class DataProcessor:
             lang = detect(limited_text)
             self.language_cache[text_hash] = lang
             return lang
-        except Exception:
+        except Exception as exc:
+            self.logger.debug("Language detection failed for hash=%s: %s", text_hash, exc)
             self.language_cache[text_hash] = "unknown"
             return "unknown"
 
@@ -374,9 +377,14 @@ def _generate_processing_summary(
     print(f"Processing summary saved to {summary_file}")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Run stage 1 data processing."""
     project_root = Path(__file__).resolve().parent.parent
     raw_dir = str(project_root / "data" / "raw")
     output_csv = str(project_root / "data" / "processed" / "cleaned_conversations.csv")
 
     process_raw_files(raw_dir, output_csv)
+
+
+if __name__ == "__main__":
+    main()

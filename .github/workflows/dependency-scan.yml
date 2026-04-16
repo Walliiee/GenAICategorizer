@@ -1,0 +1,36 @@
+name: Dependency Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "11 2 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: deps-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package and scanner
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,web,ui]"
+          pip install pip-audit
+
+      - name: Run vulnerability scan
+        run: pip-audit

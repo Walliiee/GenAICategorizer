@@ -61,6 +61,13 @@ web = [
 Repository = "https://github.com/Walliiee/GenAICategorizer"
 Issues = "https://github.com/Walliiee/GenAICategorizer/issues"
 
+[project.scripts]
+genai-categorizer-process = "src.data_processing:main"
+genai-categorizer-embed = "src.embedding:main"
+genai-categorizer-categorize = "src.clustering:main"
+genai-categorizer-benchmark = "src.benchmark:main"
+genai-categorizer-web = "src.app:main"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src"]
