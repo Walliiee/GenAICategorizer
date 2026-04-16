@@ -18,7 +18,7 @@ from typing import Dict, List
 
 try:
     import uvicorn
-    from fastapi import FastAPI, File, UploadFile
+    from fastapi import FastAPI, File, HTTPException, UploadFile
     from fastapi.responses import HTMLResponse
 except ImportError:
     print("\n  Web dependencies not installed. Run:")
@@ -43,6 +43,10 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="GenAI Categorizer", version="1.0.0")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+ALLOWED_EXTENSIONS = {".json", ".csv"}
+MAX_UPLOAD_FILES = 20
+MAX_FILE_BYTES = 10 * 1024 * 1024
+MAX_TOTAL_BYTES = 50 * 1024 * 1024
 
 _processor = DataProcessor(cache_dir=tempfile.mkdtemp())
 _categorizer = Categorizer()
@@ -62,15 +66,43 @@ async def index() -> HTMLResponse:
 @app.post("/api/analyze")
 async def analyze(files: List[UploadFile] = File(...)) -> Dict:
     """Process uploaded JSON/CSV files and return categorized results."""
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Too many files uploaded (max {MAX_UPLOAD_FILES})",
+        )
+
     all_rows: List[Dict] = []
+    total_bytes = 0
 
     for upload in files:
-        raw = await upload.read()
-        name = upload.filename or "unknown"
+        name = (upload.filename or "unknown").strip()
+        ext = Path(name).suffix.lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type for '{name}'. Allowed: .json, .csv",
+            )
 
-        if name.lower().endswith(".json"):
+        raw = await upload.read()
+        file_size = len(raw)
+        if file_size > MAX_FILE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File '{name}' exceeds max size of {MAX_FILE_BYTES // (1024 * 1024)}MB",
+            )
+        total_bytes += file_size
+        if total_bytes > MAX_TOTAL_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Total upload size exceeds {MAX_TOTAL_BYTES // (1024 * 1024)}MB",
+            )
+
+        if ext == ".json":
             all_rows.extend(_extract_from_json(raw, name))
-        elif name.lower().endswith(".csv"):
+        elif ext == ".csv":
             all_rows.extend(_extract_from_csv(raw, name))
 
     if not all_rows:
@@ -137,7 +169,8 @@ def _extract_from_csv(raw: bytes, filename: str) -> List[Dict]:
     """Parse CSV content and extract conversations."""
     try:
         df = pd.read_csv(io.BytesIO(raw))
-    except Exception:
+    except (pd.errors.EmptyDataError, pd.errors.ParserError, UnicodeDecodeError, ValueError) as exc:
+        logger.warning("Failed to parse CSV '%s': %s", filename, exc)
         return []
 
     if "text" not in df.columns:
@@ -211,7 +244,8 @@ def _compute_metrics(conversations: List[Dict]) -> Dict:
 # Entry point
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+def main() -> None:
+    """Run the local web dashboard server."""
     print()
     print("  +--------------------------------------+")
     print("  |     GenAI Categorizer Dashboard      |")
@@ -222,3 +256,7 @@ if __name__ == "__main__":
     print("  +--------------------------------------+")
     print()
     uvicorn.run(app, host="127.0.0.1", port=8000)
+
+
+if __name__ == "__main__":
+    main()

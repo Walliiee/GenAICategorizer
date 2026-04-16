@@ -32,6 +32,20 @@ JSON Exports ──► Data Processing ──► Embedding Generation ──► 
 
 **Stage 3 — Categorization** scores each conversation against 12 topic categories using compiled regex keyword patterns. Assigns a primary category, subcategory, confidence score, and voice-conversation flag. Outputs a categorized CSV and JSON metrics summary.
 
+## Architecture & GitHub Actions
+
+- **Runtime architecture**
+  - `src/data_processing.py` → stage 1 ingestion/cleaning
+  - `src/embedding.py` → stage 2 embedding generation
+  - `src/clustering.py` → stage 3 categorization + metrics
+  - `src/app.py` + `src/static/index.html` → web dashboard/API
+- **CI and delivery workflows**
+  - `.github/workflows/ci.yml` → lint + unit tests + coverage artifact
+  - `.github/workflows/ui-test.yml` → Playwright UI tests (PR path-filtered + nightly schedule)
+  - `.github/workflows/pages.yml` → deploy static docs to GitHub Pages
+  - `.github/workflows/codeql.yml` → CodeQL security analysis
+  - `.github/workflows/dependency-scan.yml` → dependency vulnerability scan (`pip-audit`)
+
 ## Categories
 
 | Category | Example Subcategories |
@@ -97,16 +111,14 @@ For batch processing or scripting, run the three-stage pipeline directly:
 2. Run each stage:
 
 ```bash
-cd src
-
 # Stage 1 — Process raw JSON files into cleaned CSV
-python data_processing.py
+genai-categorizer-process
 
 # Stage 2 — Generate sentence embeddings
-python embedding.py
+genai-categorizer-embed
 
 # Stage 3 — Categorize conversations
-python clustering.py
+genai-categorizer-categorize
 ```
 
 3. Find your results in `data/processed/`:
@@ -121,8 +133,7 @@ python clustering.py
 ### Benchmarking
 
 ```bash
-cd src
-python benchmark.py
+genai-categorizer-benchmark
 ```
 
 Measures execution time, memory delta, and throughput for each pipeline stage. Results are saved as timestamped JSON files in `outputs/benchmarks/`.
@@ -165,6 +176,14 @@ pip install -e ".[dev]"
 
 ```bash
 pytest
+```
+
+To run UI tests locally:
+
+```bash
+pip install -e ".[ui]"
+playwright install chromium
+pytest tests/test_ui.py -v -m ui
 ```
 
 ### Linting

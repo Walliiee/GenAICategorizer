@@ -105,9 +105,14 @@ class PipelineBenchmark:
         Returns a dict with system info and per-stage metrics, also saved
         as a timestamped JSON file under *output_dir*.
         """
-        from clustering import run_clustering
-        from data_processing import process_raw_files
-        from embedding import generate_embeddings_from_csv
+        try:
+            from src.clustering import run_clustering
+            from src.data_processing import process_raw_files
+            from src.embedding import generate_embeddings_from_csv
+        except ImportError:
+            from clustering import run_clustering  # type: ignore[no-redef]
+            from data_processing import process_raw_files  # type: ignore[no-redef]
+            from embedding import generate_embeddings_from_csv  # type: ignore[no-redef]
 
         project_root = Path(__file__).resolve().parent.parent
         processed_dir = project_root / "data" / "processed"
@@ -162,5 +167,10 @@ class PipelineBenchmark:
         return report
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Run end-to-end pipeline benchmark."""
     PipelineBenchmark().run()
+
+
+if __name__ == "__main__":
+    main()

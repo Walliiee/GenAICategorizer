@@ -439,9 +439,14 @@ def _print_summary(metrics: Dict) -> None:
     print(f"\nVoice conversations: {metrics['voice_conversations']}")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Run stage 3 conversation categorization."""
     project_root = Path(__file__).resolve().parent.parent
     in_csv = str(project_root / "data" / "processed" / "cleaned_conversations.csv")
     out_csv = str(project_root / "data" / "processed" / "categorized_conversations.csv")
 
     run_clustering(in_csv, out_csv)
+
+
+if __name__ == "__main__":
+    main()
