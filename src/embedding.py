@@ -157,7 +157,10 @@ class EmbeddingGenerator:
                 all_embeddings.append(emb)
             except Exception as exc:
                 self.logger.warning(
-                    "Chunk encoding failed with batch_size=%d on %s; retrying with batch_size=1: %s",
+                    (
+                        "Chunk encoding failed with batch_size=%d on %s; "
+                        "retrying with batch_size=1: %s"
+                    ),
                     batch_size,
                     self.device,
                     exc,
