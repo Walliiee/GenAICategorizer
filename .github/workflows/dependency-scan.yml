@@ -13,6 +13,9 @@ concurrency:
   group: deps-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   pip-audit:
     runs-on: ubuntu-latest
