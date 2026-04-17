@@ -249,12 +249,16 @@ def main() -> None:
     parser.add_argument(
         "--input-csv",
         default=os.getenv(
-            "GENAI_INPUT_CSV", str(project_root / "data" / "processed" / "cleaned_conversations.csv")
+            "GENAI_INPUT_CSV",
+            str(project_root / "data" / "processed" / "cleaned_conversations.csv"),
         ),
     )
     parser.add_argument(
         "--output-file",
-        default=os.getenv("GENAI_EMBEDDINGS_OUTPUT", str(project_root / "data" / "processed" / "embeddings.npy")),
+        default=os.getenv(
+            "GENAI_EMBEDDINGS_OUTPUT",
+            str(project_root / "data" / "processed" / "embeddings.npy"),
+        ),
     )
     parser.add_argument(
         "--model-name",

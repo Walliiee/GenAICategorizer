@@ -13,7 +13,7 @@ import re
 import time
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -212,6 +212,9 @@ DANISH_MARKERS = [
     "på", "jeg", "du", "vi", "denne",
 ]
 
+# Used for stable floating-point tie detection when hybrid scores are effectively equal.
+SCORE_COMPARISON_EPSILON = 1e-9
+
 
 # ---------------------------------------------------------------------------
 # Categorizer
@@ -272,7 +275,7 @@ class Categorizer:
         alt = "|".join(re.escape(kw) for kw in VOICE_KEYWORDS)
         return re.compile(rf"\b(?:{alt})\b", re.IGNORECASE)
 
-    def _build_semantic_model(self) -> tuple[TfidfVectorizer, object]:
+    def _build_semantic_model(self) -> Tuple[TfidfVectorizer, object]:
         """Build a lightweight semantic representation for category matching."""
         prototype_texts: List[str] = []
         for category in self.semantic_category_order:
@@ -366,7 +369,7 @@ class Categorizer:
             top_categories = [
                 name
                 for name, value in scores.items()
-                if abs(value["hybrid_score"] - best_hybrid) < 1e-9
+                if abs(value["hybrid_score"] - best_hybrid) < SCORE_COMPARISON_EPSILON
             ]
             top_categories.sort(
                 key=lambda category: (
@@ -612,7 +615,8 @@ def main() -> None:
     parser.add_argument(
         "--input-csv",
         default=os.getenv(
-            "GENAI_INPUT_CSV", str(project_root / "data" / "processed" / "cleaned_conversations.csv")
+            "GENAI_INPUT_CSV",
+            str(project_root / "data" / "processed" / "cleaned_conversations.csv"),
         ),
     )
     parser.add_argument(

@@ -19,7 +19,7 @@ from datetime import datetime
 from functools import lru_cache
 from multiprocessing import cpu_count
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from tqdm import tqdm
 
@@ -37,6 +37,8 @@ try:
     HAS_LANGDETECT = True
 except ImportError:
     HAS_LANGDETECT = False
+
+TEXT_MIN_INITIAL_VALUE = float("inf")
 
 
 class DataProcessor:
@@ -229,12 +231,15 @@ class DataProcessor:
 # ---------------------------------------------------------------------------
 
 
-def process_single_file(file_path: str, processor: DataProcessor) -> Tuple[List[Dict], int, int]:
+def process_single_file(
+    file_path: str, processor: Optional[DataProcessor] = None
+) -> Tuple[List[Dict], int, int]:
     """Process one JSON file and return extracted conversations.
 
     Returns:
         Tuple of (rows, total_conversation_count, empty_conversation_count).
     """
+    active_processor = processor or DataProcessor()
     rows: List[Dict] = []
     empty_count = 0
     total_conversations = 0
@@ -253,11 +258,11 @@ def process_single_file(file_path: str, processor: DataProcessor) -> Tuple[List[
                 "uuid",
                 conv.get("title", f"conv_{total_conversations}_{os.path.basename(file_path)}"),
             )
-            conversation_text = processor.extract_text(conv)
+            conversation_text = active_processor.extract_text(conv)
 
             if conversation_text.strip():
-                text_hash = processor.get_text_hash(conversation_text)
-                lang = processor.detect_language_cached(text_hash, conversation_text)
+                text_hash = active_processor.get_text_hash(conversation_text)
+                lang = active_processor.detect_language_cached(text_hash, conversation_text)
                 rows.append(
                     {
                         "conversation_id": conv_id,
@@ -298,19 +303,20 @@ def process_raw_files(
     total_conversations = 0
     total_empty = 0
     language_counts: Counter = Counter()
-    text_min = float("inf")
+    text_min = TEXT_MIN_INITIAL_VALUE
     text_max = 0
     text_total = 0
-    source_files: set[str] = set()
+    source_files: Set[str] = set()
 
     output_dir = os.path.dirname(output_csv)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
     fieldnames = ["conversation_id", "text", "language", "source_file"]
-    with open(output_csv, "w", newline="", encoding="utf-8") as csvfile, concurrent.futures.ThreadPoolExecutor(
-        max_workers=processor.max_workers
-    ) as executor:
+    with (
+        open(output_csv, "w", newline="", encoding="utf-8") as csvfile,
+        concurrent.futures.ThreadPoolExecutor(max_workers=processor.max_workers) as executor,
+    ):
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         pending_rows: List[Dict] = []
@@ -370,7 +376,7 @@ def process_raw_files(
         total_empty=total_empty,
         valid_conversations=all_rows_written,
         language_counts=language_counts,
-        text_min=0 if text_min == float("inf") else int(text_min),
+        text_min=0 if text_min == TEXT_MIN_INITIAL_VALUE else int(text_min),
         text_max=int(text_max),
         text_avg=(text_total / all_rows_written) if all_rows_written else 0.0,
     )

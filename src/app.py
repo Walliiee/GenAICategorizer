@@ -29,22 +29,22 @@ except ImportError:
 import pandas as pd
 
 try:
+    from src.clustering import Categorizer
     from src.config import (
         APP_MAX_FILE_BYTES,
         APP_MAX_TOTAL_BYTES,
         APP_MAX_UPLOAD_FILES,
         complexity_label,
     )
-    from src.clustering import Categorizer
     from src.data_processing import DataProcessor
 except ImportError:
+    from clustering import Categorizer  # type: ignore[no-redef]
     from config import (  # type: ignore[no-redef]
         APP_MAX_FILE_BYTES,
         APP_MAX_TOTAL_BYTES,
         APP_MAX_UPLOAD_FILES,
         complexity_label,
     )
-    from clustering import Categorizer  # type: ignore[no-redef]
     from data_processing import DataProcessor  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
