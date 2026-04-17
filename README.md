@@ -119,6 +119,9 @@ genai-categorizer-embed
 
 # Stage 3 — Categorize conversations
 genai-categorizer-categorize
+
+# Optional — Evaluate against labeled dataset
+genai-categorizer-evaluate --evaluation-csv data/evaluation/category_eval_dataset.csv
 ```
 
 3. Find your results in `data/processed/`:
@@ -129,6 +132,8 @@ genai-categorizer-categorize
 | `embeddings.npy` | Dense vector embeddings |
 | `categorized_conversations.csv` | Final categorized output |
 | `conversation_metrics.json` | Distribution and performance metrics |
+
+All pipeline commands now accept CLI flags (paths, batch size, thresholds) and environment variables (for example: `GENAI_INPUT_CSV`, `GENAI_OUTPUT_CSV`, `GENAI_BATCH_SIZE`, `GENAI_CONFIDENCE_THRESHOLD`).
 
 ### Benchmarking
 

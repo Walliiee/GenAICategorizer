@@ -5,6 +5,7 @@ with automatic GPU/MPS detection, dynamic batch sizing, persistent caching,
 and chunked processing for memory efficiency.
 """
 
+import argparse
 import gc
 import hashlib
 import logging
@@ -18,6 +19,11 @@ import psutil
 import torch
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
+
+try:
+    from src.config import DEFAULT_BATCH_SIZE
+except ImportError:
+    from config import DEFAULT_BATCH_SIZE  # type: ignore[no-redef]
 
 
 class EmbeddingGenerator:
@@ -212,6 +218,7 @@ def generate_embeddings_from_csv(
     output_file: str,
     model_name: str = "paraphrase-multilingual-mpnet-base-v2",
     chunk_size: int = 1000,
+    cache_dir: str = "../data/cache",
 ) -> None:
     """Read a CSV with a ``text`` column, generate embeddings, and save as ``.npy``."""
     print("Loading conversation data...")
@@ -222,7 +229,7 @@ def generate_embeddings_from_csv(
     texts = [t for t in df["text"].astype(str).fillna("").tolist() if t.strip()]
     print(f"Processing {len(texts)} conversations...")
 
-    generator = EmbeddingGenerator(model_name)
+    generator = EmbeddingGenerator(model_name=model_name, cache_dir=cache_dir)
     print("Initial memory:", generator.get_memory_usage())
 
     embeddings = generator.generate_embeddings(texts, chunk_size)
@@ -237,11 +244,40 @@ def generate_embeddings_from_csv(
 
 def main() -> None:
     """Run stage 2 embedding generation."""
+    parser = argparse.ArgumentParser(description="Generate conversation embeddings")
     project_root = Path(__file__).resolve().parent.parent
-    csv_path = str(project_root / "data" / "processed" / "cleaned_conversations.csv")
-    out_path = str(project_root / "data" / "processed" / "embeddings.npy")
+    parser.add_argument(
+        "--input-csv",
+        default=os.getenv(
+            "GENAI_INPUT_CSV", str(project_root / "data" / "processed" / "cleaned_conversations.csv")
+        ),
+    )
+    parser.add_argument(
+        "--output-file",
+        default=os.getenv("GENAI_EMBEDDINGS_OUTPUT", str(project_root / "data" / "processed" / "embeddings.npy")),
+    )
+    parser.add_argument(
+        "--model-name",
+        default=os.getenv("GENAI_MODEL_NAME", "paraphrase-multilingual-mpnet-base-v2"),
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=int(os.getenv("GENAI_CHUNK_SIZE", str(DEFAULT_BATCH_SIZE))),
+    )
+    parser.add_argument(
+        "--cache-dir",
+        default=os.getenv("GENAI_CACHE_DIR", str(project_root / "data" / "cache")),
+    )
+    args = parser.parse_args()
 
-    generate_embeddings_from_csv(csv_path, out_path)
+    generate_embeddings_from_csv(
+        csv_file=args.input_csv,
+        output_file=args.output_file,
+        model_name=args.model_name,
+        chunk_size=args.chunk_size,
+        cache_dir=args.cache_dir,
+    )
 
 
 if __name__ == "__main__":

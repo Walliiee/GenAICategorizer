@@ -5,6 +5,7 @@ conversation data exported from Claude and ChatGPT. Supports parallel
 file processing and persistent language detection caching.
 """
 
+import argparse
 import concurrent.futures
 import csv
 import glob
@@ -12,6 +13,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 from collections import Counter
 from datetime import datetime
 from functools import lru_cache
@@ -53,6 +55,7 @@ class DataProcessor:
         self.cache_dir = cache_dir
         self.max_workers = max_workers or min(cpu_count(), 8)
         self.language_cache: Dict[str, str] = {}
+        self._cache_lock = threading.Lock()
         self._setup_logging()
         self._setup_cache()
 
@@ -111,17 +114,20 @@ class DataProcessor:
         if not HAS_LANGDETECT:
             return "unknown"
 
-        if text_hash in self.language_cache:
-            return self.language_cache[text_hash]
+        with self._cache_lock:
+            if text_hash in self.language_cache:
+                return self.language_cache[text_hash]
 
         try:
             limited_text = text[:1000] if len(text) > 1000 else text
             lang = detect(limited_text)
-            self.language_cache[text_hash] = lang
+            with self._cache_lock:
+                self.language_cache[text_hash] = lang
             return lang
         except Exception as exc:
             self.logger.debug("Language detection failed for hash=%s: %s", text_hash, exc)
-            self.language_cache[text_hash] = "unknown"
+            with self._cache_lock:
+                self.language_cache[text_hash] = "unknown"
             return "unknown"
 
     @staticmethod
@@ -223,13 +229,12 @@ class DataProcessor:
 # ---------------------------------------------------------------------------
 
 
-def process_single_file(file_path: str) -> Tuple[List[Dict], int, int]:
+def process_single_file(file_path: str, processor: DataProcessor) -> Tuple[List[Dict], int, int]:
     """Process one JSON file and return extracted conversations.
 
     Returns:
         Tuple of (rows, total_conversation_count, empty_conversation_count).
     """
-    processor = DataProcessor()
     rows: List[Dict] = []
     empty_count = 0
     total_conversations = 0
@@ -271,13 +276,16 @@ def process_single_file(file_path: str) -> Tuple[List[Dict], int, int]:
 
 
 def process_raw_files(
-    raw_dir: str, output_csv: str, max_workers: Optional[int] = None
+    raw_dir: str,
+    output_csv: str,
+    max_workers: Optional[int] = None,
+    cache_dir: str = "../data/cache",
 ) -> None:
     """Process all JSON conversation files in *raw_dir* and write a cleaned CSV.
 
     Uses parallel I/O, language detection caching, and batch CSV writes.
     """
-    processor = DataProcessor(max_workers=max_workers)
+    processor = DataProcessor(cache_dir=cache_dir, max_workers=max_workers)
     file_paths = glob.glob(os.path.join(raw_dir, "*.json"))
 
     if not file_paths:
@@ -286,14 +294,29 @@ def process_raw_files(
 
     processor.logger.info("Found %d JSON files in %s", len(file_paths), raw_dir)
 
-    all_rows: List[Dict] = []
+    all_rows_written = 0
     total_conversations = 0
     total_empty = 0
     language_counts: Counter = Counter()
+    text_min = float("inf")
+    text_max = 0
+    text_total = 0
+    source_files: set[str] = set()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=processor.max_workers) as executor:
+    output_dir = os.path.dirname(output_csv)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    fieldnames = ["conversation_id", "text", "language", "source_file"]
+    with open(output_csv, "w", newline="", encoding="utf-8") as csvfile, concurrent.futures.ThreadPoolExecutor(
+        max_workers=processor.max_workers
+    ) as executor:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        pending_rows: List[Dict] = []
+        batch_size = 1000
         future_to_file = {
-            executor.submit(process_single_file, fp): fp for fp in file_paths
+            executor.submit(process_single_file, fp, processor): fp for fp in file_paths
         }
         for future in tqdm(
             concurrent.futures.as_completed(future_to_file),
@@ -303,13 +326,26 @@ def process_raw_files(
             file_path = future_to_file[future]
             try:
                 rows, file_total, file_empty = future.result()
-                all_rows.extend(rows)
                 total_conversations += file_total
                 total_empty += file_empty
+                source_files.add(os.path.basename(file_path))
                 for row in rows:
                     language_counts[row["language"]] += 1
+                    text_len = len(row["text"])
+                    text_min = min(text_min, text_len)
+                    text_max = max(text_max, text_len)
+                    text_total += text_len
+                pending_rows.extend(rows)
+                if len(pending_rows) >= batch_size:
+                    writer.writerows(pending_rows)
+                    all_rows_written += len(pending_rows)
+                    pending_rows = []
             except Exception as exc:
                 processor.logger.error("Error processing %s: %s", file_path, exc)
+
+        if pending_rows:
+            writer.writerows(pending_rows)
+            all_rows_written += len(pending_rows)
 
     processor._save_language_cache()
 
@@ -320,53 +356,52 @@ def process_raw_files(
 
     processor.logger.info("Total conversations processed: %d", total_conversations)
     processor.logger.info("Empty conversations discarded: %d", total_empty)
-    processor.logger.info("Non-empty conversations saved: %d", len(all_rows))
+    processor.logger.info("Non-empty conversations saved: %d", all_rows_written)
     if total_conversations > 0:
         processor.logger.info(
-            "Success rate: %.2f%%", len(all_rows) / total_conversations * 100
+            "Success rate: %.2f%%", all_rows_written / total_conversations * 100
         )
-
-    # Write output
-    output_dir = os.path.dirname(output_csv)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
-    fieldnames = ["conversation_id", "text", "language", "source_file"]
-    with open(output_csv, "w", newline="", encoding="utf-8") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        batch_size = 1000
-        for i in range(0, len(all_rows), batch_size):
-            writer.writerows(all_rows[i : i + batch_size])
 
     processor.logger.info("Processed data saved to %s", output_csv)
     _generate_processing_summary(
-        all_rows, output_csv, total_conversations, total_empty, language_counts
+        output_csv=output_csv,
+        total_files_processed=len(source_files),
+        total_conversations=total_conversations,
+        total_empty=total_empty,
+        valid_conversations=all_rows_written,
+        language_counts=language_counts,
+        text_min=0 if text_min == float("inf") else int(text_min),
+        text_max=int(text_max),
+        text_avg=(text_total / all_rows_written) if all_rows_written else 0.0,
     )
 
 
 def _generate_processing_summary(
-    rows: List[Dict],
     output_csv: str,
+    total_files_processed: int,
     total_conversations: int,
     total_empty: int,
+    valid_conversations: int,
     language_counts: Counter,
+    text_min: int,
+    text_max: int,
+    text_avg: float,
 ) -> None:
     """Write a JSON summary of processing statistics alongside the output CSV."""
     summary = {
         "processing_timestamp": datetime.now().isoformat(),
-        "total_files_processed": len({row["source_file"] for row in rows}),
+        "total_files_processed": total_files_processed,
         "total_conversations": total_conversations,
         "empty_conversations": total_empty,
-        "valid_conversations": len(rows),
+        "valid_conversations": valid_conversations,
         "success_rate": (
-            (len(rows) / total_conversations * 100) if total_conversations > 0 else 0
+            (valid_conversations / total_conversations * 100) if total_conversations > 0 else 0
         ),
         "language_distribution": dict(language_counts),
         "text_length_stats": {
-            "min": min((len(row["text"]) for row in rows), default=0),
-            "max": max((len(row["text"]) for row in rows), default=0),
-            "avg": sum(len(row["text"]) for row in rows) / len(rows) if rows else 0,
+            "min": text_min,
+            "max": text_max,
+            "avg": text_avg,
         },
     }
 
@@ -379,11 +414,36 @@ def _generate_processing_summary(
 
 def main() -> None:
     """Run stage 1 data processing."""
+    parser = argparse.ArgumentParser(description="Process raw conversation exports")
     project_root = Path(__file__).resolve().parent.parent
-    raw_dir = str(project_root / "data" / "raw")
-    output_csv = str(project_root / "data" / "processed" / "cleaned_conversations.csv")
+    parser.add_argument(
+        "--raw-dir",
+        default=os.getenv("GENAI_RAW_DIR", str(project_root / "data" / "raw")),
+    )
+    parser.add_argument(
+        "--output-csv",
+        default=os.getenv(
+            "GENAI_CLEANED_OUTPUT",
+            str(project_root / "data" / "processed" / "cleaned_conversations.csv"),
+        ),
+    )
+    parser.add_argument(
+        "--cache-dir",
+        default=os.getenv("GENAI_CACHE_DIR", str(project_root / "data" / "cache")),
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=int(os.getenv("GENAI_MAX_WORKERS", "0")) or None,
+    )
+    args = parser.parse_args()
 
-    process_raw_files(raw_dir, output_csv)
+    process_raw_files(
+        raw_dir=args.raw_dir,
+        output_csv=args.output_csv,
+        max_workers=args.max_workers,
+        cache_dir=args.cache_dir,
+    )
 
 
 if __name__ == "__main__":

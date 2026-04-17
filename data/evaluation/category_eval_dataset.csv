@@ -1,0 +1,7 @@
+text,expected_category
+"Please debug this Python function, it throws an error",Code Development
+"Can you explain what reinforcement learning is?",Learning/Education
+"Give me a recipe for a quick pasta dinner",Cooking/Food
+"Write a LinkedIn post announcing our new season",SoMe/Marketing
+"Create an image of a sunset in watercolor style",DALL-E/Image
+"Compare these two market strategies with pros and cons",Analysis/Research

@@ -1,9 +1,11 @@
 """Tests for the conversation categorization module."""
 
+import json
+
 import pandas as pd
 import pytest
 
-from clustering import CATEGORIES, Categorizer, calculate_metrics
+from clustering import CATEGORIES, Categorizer, calculate_metrics, evaluate_categorizer
 
 
 @pytest.fixture
@@ -60,6 +62,11 @@ class TestCategorizer:
         results = categorizer.assign_categories_batch(texts)
         assert results[0]["confidence_score"] > 0
 
+    def test_confidence_threshold_can_force_other(self):
+        c = Categorizer(confidence_threshold=999.0)
+        result = c.assign_categories_batch(["Please debug this Python code"])[0]
+        assert result["main_category"] == "Other"
+
     def test_result_keys(self, categorizer):
         results = categorizer.assign_categories_batch(["test code"])
         expected = {
@@ -70,6 +77,12 @@ class TestCategorizer:
             "all_scores",
         }
         assert expected == set(results[0].keys())
+
+    def test_tie_breaking_is_deterministic(self, categorizer):
+        text = "plan strategy campaign"
+        first = categorizer.assign_categories_batch([text])[0]["main_category"]
+        second = categorizer.assign_categories_batch([text])[0]["main_category"]
+        assert first == second
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +108,11 @@ class TestDanishDetection:
 
     def test_non_danish(self, categorizer):
         assert not categorizer.is_danish_text("How can I help you with this task?")
+
+    def test_danish_learning_text_not_other(self, categorizer):
+        text = "Kan du forklare hvordan denne metode virker i praksis?"
+        result = categorizer.assign_categories_batch([text])[0]
+        assert result["main_category"] != "Other"
 
 
 # ---------------------------------------------------------------------------
@@ -142,3 +160,32 @@ class TestCategoryDefinitions:
 
     def test_expected_category_count(self):
         assert len(CATEGORIES) == 12
+
+
+class TestEvaluation:
+    """Test evaluation output generation."""
+
+    def test_evaluation_report_contains_per_category(self, tmp_path):
+        df = pd.DataFrame(
+            {
+                "text": [
+                    "debug this python function",
+                    "explain this concept",
+                    "recipe for pasta",
+                ],
+                "expected_category": [
+                    "Code Development",
+                    "Learning/Education",
+                    "Cooking/Food",
+                ],
+            }
+        )
+        csv_path = tmp_path / "eval.csv"
+        out_path = tmp_path / "eval.json"
+        df.to_csv(csv_path, index=False)
+
+        report = evaluate_categorizer(str(csv_path), output_json=str(out_path))
+        assert "per_category" in report
+        assert out_path.exists()
+        data = json.loads(out_path.read_text(encoding="utf-8"))
+        assert "macro_f1" in data

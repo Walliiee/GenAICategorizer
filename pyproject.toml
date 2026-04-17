@@ -65,6 +65,7 @@ Issues = "https://github.com/Walliiee/GenAICategorizer/issues"
 genai-categorizer-process = "src.data_processing:main"
 genai-categorizer-embed = "src.embedding:main"
 genai-categorizer-categorize = "src.clustering:main"
+genai-categorizer-evaluate = "src.clustering:main_evaluate"
 genai-categorizer-benchmark = "src.benchmark:main"
 genai-categorizer-web = "src.app:main"
 

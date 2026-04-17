@@ -29,9 +29,21 @@ except ImportError:
 import pandas as pd
 
 try:
+    from src.config import (
+        APP_MAX_FILE_BYTES,
+        APP_MAX_TOTAL_BYTES,
+        APP_MAX_UPLOAD_FILES,
+        complexity_label,
+    )
     from src.clustering import Categorizer
     from src.data_processing import DataProcessor
 except ImportError:
+    from config import (  # type: ignore[no-redef]
+        APP_MAX_FILE_BYTES,
+        APP_MAX_TOTAL_BYTES,
+        APP_MAX_UPLOAD_FILES,
+        complexity_label,
+    )
     from clustering import Categorizer  # type: ignore[no-redef]
     from data_processing import DataProcessor  # type: ignore[no-redef]
 
@@ -44,12 +56,21 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="GenAI Categorizer", version="1.0.0")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 ALLOWED_EXTENSIONS = {".json", ".csv"}
-MAX_UPLOAD_FILES = 20
-MAX_FILE_BYTES = 10 * 1024 * 1024
-MAX_TOTAL_BYTES = 50 * 1024 * 1024
+MAX_UPLOAD_FILES = APP_MAX_UPLOAD_FILES
+MAX_FILE_BYTES = APP_MAX_FILE_BYTES
+MAX_TOTAL_BYTES = APP_MAX_TOTAL_BYTES
 
 _processor = DataProcessor(cache_dir=tempfile.mkdtemp())
 _categorizer = Categorizer()
+
+
+class ExtractionError(ValueError):
+    """Structured extraction error with a stable API-facing code."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
 
 # ---------------------------------------------------------------------------
 # Routes
@@ -76,23 +97,36 @@ async def analyze(files: List[UploadFile] = File(...)) -> Dict:
 
     all_rows: List[Dict] = []
     total_bytes = 0
+    file_reports: List[Dict] = []
 
     for upload in files:
         name = (upload.filename or "unknown").strip()
         ext = Path(name).suffix.lower()
         if ext not in ALLOWED_EXTENSIONS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported file type for '{name}'. Allowed: .json, .csv",
+            file_reports.append(
+                {
+                    "filename": name,
+                    "status": "error",
+                    "error_code": "unsupported_file_type",
+                    "message": "Unsupported file type. Allowed: .json, .csv",
+                    "rows_extracted": 0,
+                }
             )
+            continue
 
         raw = await upload.read()
         file_size = len(raw)
         if file_size > MAX_FILE_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File '{name}' exceeds max size of {MAX_FILE_BYTES // (1024 * 1024)}MB",
+            file_reports.append(
+                {
+                    "filename": name,
+                    "status": "error",
+                    "error_code": "file_too_large",
+                    "message": f"File exceeds {MAX_FILE_BYTES // (1024 * 1024)}MB limit",
+                    "rows_extracted": 0,
+                }
             )
+            continue
         total_bytes += file_size
         if total_bytes > MAX_TOTAL_BYTES:
             raise HTTPException(
@@ -100,13 +134,31 @@ async def analyze(files: List[UploadFile] = File(...)) -> Dict:
                 detail=f"Total upload size exceeds {MAX_TOTAL_BYTES // (1024 * 1024)}MB",
             )
 
-        if ext == ".json":
-            all_rows.extend(_extract_from_json(raw, name))
-        elif ext == ".csv":
-            all_rows.extend(_extract_from_csv(raw, name))
+        try:
+            rows = _extract_from_json(raw, name) if ext == ".json" else _extract_from_csv(raw, name)
+            all_rows.extend(rows)
+            file_reports.append(
+                {
+                    "filename": name,
+                    "status": "ok",
+                    "error_code": None,
+                    "message": None,
+                    "rows_extracted": len(rows),
+                }
+            )
+        except ExtractionError as exc:
+            file_reports.append(
+                {
+                    "filename": name,
+                    "status": "error",
+                    "error_code": exc.code,
+                    "message": exc.message,
+                    "rows_extracted": 0,
+                }
+            )
 
     if not all_rows:
-        return {"conversations": [], "metrics": None}
+        return {"conversations": [], "metrics": None, "file_reports": file_reports}
 
     texts = [r["text"] for r in all_rows]
     results = _categorizer.assign_categories_batch(texts)
@@ -114,7 +166,6 @@ async def analyze(files: List[UploadFile] = File(...)) -> Dict:
     conversations: List[Dict] = []
     for row, cat in zip(all_rows, results):
         length = len(row["text"])
-        complexity = "simple" if length <= 100 else ("medium" if length <= 500 else "complex")
         preview = (row["text"][:300] + "…") if len(row["text"]) > 300 else row["text"]
 
         conversations.append({
@@ -127,10 +178,14 @@ async def analyze(files: List[UploadFile] = File(...)) -> Dict:
             "is_voice": cat["is_voice"],
             "confidence_score": cat["confidence_score"],
             "char_length": length,
-            "complexity": complexity,
+            "complexity": complexity_label(length),
         })
 
-    return {"conversations": conversations, "metrics": _compute_metrics(conversations)}
+    return {
+        "conversations": conversations,
+        "metrics": _compute_metrics(conversations),
+        "file_reports": file_reports,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -142,13 +197,23 @@ def _extract_from_json(raw: bytes, filename: str) -> List[Dict]:
     """Parse JSON content and extract conversations."""
     try:
         data = json.loads(raw)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return []
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ExtractionError("invalid_json", f"Malformed JSON: {exc}") from exc
 
-    items = data if isinstance(data, list) else [data] if isinstance(data, dict) else []
+    if isinstance(data, list):
+        items = data
+    elif isinstance(data, dict):
+        items = [data]
+    else:
+        raise ExtractionError(
+            "invalid_json_structure",
+            "JSON root must be an object or array of objects",
+        )
     rows: List[Dict] = []
 
     for i, conv in enumerate(items):
+        if not isinstance(conv, dict):
+            continue
         text = _processor.extract_text(conv)
         if not text.strip():
             continue
@@ -162,6 +227,11 @@ def _extract_from_json(raw: bytes, filename: str) -> List[Dict]:
             "language": lang,
             "source_file": filename,
         })
+    if not rows:
+        raise ExtractionError(
+            "no_valid_conversations",
+            "No valid conversations with extractable text found in JSON file",
+        )
     return rows
 
 
@@ -170,11 +240,10 @@ def _extract_from_csv(raw: bytes, filename: str) -> List[Dict]:
     try:
         df = pd.read_csv(io.BytesIO(raw))
     except (pd.errors.EmptyDataError, pd.errors.ParserError, UnicodeDecodeError, ValueError) as exc:
-        logger.warning("Failed to parse CSV '%s': %s", filename, exc)
-        return []
+        raise ExtractionError("invalid_csv", f"Malformed CSV: {exc}") from exc
 
     if "text" not in df.columns:
-        return []
+        raise ExtractionError("missing_text_column", "CSV must contain a 'text' column")
 
     rows: List[Dict] = []
     for idx, r in df.iterrows():
@@ -187,6 +256,8 @@ def _extract_from_csv(raw: bytes, filename: str) -> List[Dict]:
             "language": str(r.get("language", "unknown")),
             "source_file": filename,
         })
+    if not rows:
+        raise ExtractionError("no_valid_rows", "CSV contains no non-empty text rows")
     return rows
 
 
