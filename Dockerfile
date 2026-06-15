@@ -13,11 +13,21 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install the package with web extras (FastAPI + uvicorn + python-multipart).
-# Copy only what the build needs first so layers cache well.
+# Install dependencies first, against a stub package, so the heavy layer
+# (torch, sentence-transformers) stays cached when only src/ changes.
 COPY pyproject.toml README.md ./
+RUN mkdir -p src && touch src/__init__.py \
+    && pip install --upgrade pip \
+    && pip install ".[web]"
+
+# Add the real source and (re)install just the package itself — deps are
+# already present, so this stays fast on code-only changes.
 COPY src ./src
-RUN pip install --upgrade pip && pip install ".[web]"
+RUN pip install --no-deps ".[web]"
+
+# Run as a non-root user; ensure /app (incl. the HF cache dir) is writable.
+RUN useradd -m -u 8888 appuser && chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8000
 
