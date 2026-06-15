@@ -6,6 +6,8 @@
 
 A Python tool that categorizes AI assistant conversations (Claude, ChatGPT) by topic using multilingual sentence embeddings and keyword-based classification. Analyze your conversation history to discover usage patterns across 12 topic categories with subcategory granularity.
 
+> **🔍 Try it in your browser** — a light, no-install version of the categorizer (keyword stage only, runs fully client-side, nothing uploaded) is live at **[mikekrohn.ai/tools/categorizer](https://mikekrohn.ai/tools/categorizer)**. Clone this repo for the full pipeline (embeddings, clustering, charts).
+
 ## Features
 
 - **Interactive web dashboard** — Drag-and-drop JSON or CSV files in your browser to instantly visualize conversation patterns with charts and a searchable data table
@@ -101,6 +103,25 @@ Open **http://localhost:8000** in your browser, then drag-and-drop your JSON or 
 - **Voice vs text** — voice conversation detection
 - **Confidence scores** — histogram of categorization confidence
 - **Searchable data table** — filter by category, complexity, or free-text search; sortable columns; click to expand text previews
+
+### Docker (run as a service)
+
+Build and run the web dashboard/API in a container — no local Python setup
+required:
+
+```bash
+docker build -t genai-categorizer .
+docker run --rm -p 8000:8000 genai-categorizer
+```
+
+Then open **http://localhost:8000**, or POST files to `http://localhost:8000/api/analyze`.
+
+Notes:
+- The image is CPU-only and pulls the CPU build of PyTorch. The
+  `paraphrase-multilingual-mpnet-base-v2` model (~569 MB) downloads on first
+  request, so the first analysis is slower (subsequent ones are fast).
+- To persist the model between runs, mount a cache volume:
+  `-v hf-cache:/app/.cache/huggingface`.
 
 ### CLI Pipeline
 
