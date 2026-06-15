@@ -36,4 +36,6 @@ jobs:
           pip install pip-audit
 
       - name: Run vulnerability scan
-        run: pip-audit
+        # CVE-2025-3000 (torch) has no fixed version available upstream yet;
+        # ignore it so the scan still catches new, actionable vulnerabilities.
+        run: pip-audit --ignore-vuln CVE-2025-3000
